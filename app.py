@@ -371,6 +371,7 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
     WIND_MIST_KMH     = 50.0   # km/h  en dessous : brumisation plus efficace que fenêtres
     REGIME_COOLDOWN_H = 0.5    # h   min 30 min entre changements de régime
     MIST_PRE_MIN      = 10.0   # min  durée de stress avant action
+    T_EXT_OPEN_MIN    = 22.0   # °C  en dessous (route rapide) : pas d'ouverture fenêtres
     STEP_MIN        = 15.0   # min  pas ODE
     N_SUB           = 90
     DT_S            = STEP_MIN * 60.0 / N_SUB   # 10 s
@@ -400,8 +401,8 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
     # ── Pre-loop helpers (closures over simulation state; called inside the loop) ──
 
     def _calc_opt_spray_s():
-        """Returns minimum misting duration (seconds) to reach T_set without hypothermia.
-        Reads T_cur, water_on_skin, truck_v, wind_amb, is_stopped, Tinf, RH from closure."""
+        """Returns misting duration (s) to cool effectively with post-spray trend check.
+        Reads T_cur, water_on_skin, truck_v, wind_amb, is_stopped, Tinf, RH, t from closure."""
         vent_b  = max(wind_amb, 5.0) if is_stopped else max(truck_v, 10.0)
         h_c_b   = h_convection_forcee_sphere_W_m2K(r, vent_b, Tinf, RH)
         mdot_b  = mdot_evap_max_kg_s(r, vent_b, Tinf, RH)
@@ -420,33 +421,99 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
                 for _s in range(N_SUB): T_r = rk4_step(T_r, DT_S, fb(pp))
             return T_r
 
-        # Phase 1 : minimum sub-steps within a single 15-min step
+        def _sim_spray_state(n_subs):
+            """Simulate n_subs sub-steps of spray from T_cur; return (T_end, w_skin_end)."""
+            T_t = float(T_cur); w_t = float(water_on_skin)
+            for si in range(N_SUB):
+                if si < n_subs:
+                    w_t += net_b * DT_S
+                    T_t  = rk4_step(T_t, DT_S, fb(sP))
+                else:
+                    pp = 0.0
+                    if w_t > 0:
+                        ev = min(w_t, mdot_b * DT_S); pp = (ev / DT_S) * H_FG
+                        w_t = max(0.0, w_t - ev)
+                    T_t = rk4_step(T_t, DT_S, fb(pp))
+            return T_t, w_t
+
+        T_POST_MIN = 38.0
+        LOOK_STEPS = 4   # 4 × 15 min = 1 h de lookahead post-spray
+
+        def _post_T_min(T0, w0, spray_end_t):
+            """Simulate LOOK_STEPS sans spray; retourne le T minimum observé."""
+            T_s, w_s, T_min = T0, w0, T0
+            t_lk = spray_end_t
+            for _ in range(LOOK_STEPS):
+                wn     = nearest_w(t_lk)
+                v_n    = wn.get("truck_speed_kmh", truck_v)
+                stp    = wn.get("is_stopped", False)
+                Te_n   = wn["temp_C"]; rh_n = wn["rh_frac"]
+                wamb_n = wn.get("wind_kmh", 0.0)
+                vb_n   = max(5.0, wamb_n if stp else max(v_n, 10.0))
+                hc_n   = h_convection_forcee_sphere_W_m2K(r, vb_n, Te_n, rh_n)
+                md_n   = mdot_evap_max_kg_s(r, vb_n, Te_n, rh_n)
+                for _s in range(N_SUB):
+                    pp = 0.0
+                    if w_s > 0:
+                        ev = min(w_s, md_n * DT_S); pp = (ev / DT_S) * H_FG
+                        w_s = max(0.0, w_s - ev)
+                    T_s = rk4_step(T_s, DT_S,
+                        lambda Tv, hc=hc_n, Te=Te_n, p=pp: (Pint(Tv) - hc * S * (Tv - Te) - p) / C_JK)
+                T_min = min(T_min, T_s)
+                t_lk += STEP_MIN / 60.0
+            return T_min
+
+        # ── Phase 1 : minimum sub-steps within a single 15-min step ──
+        opt_s = None; T_end = float(T_cur); w_end = float(water_on_skin)
         for n in range(1, N_SUB + 1):
             w_acc = water_on_skin + net_b * n * DT_S
             n_p   = N_SUB - n
             if n_p > 0 and w_acc > 0.0:
                 ec = mdot_b * n_p * DT_S; ev = min(w_acc, ec)
-                pp_v  = (ev / (n_p * DT_S)) * H_FG
-                w_end = max(0.0, w_acc - ev)
+                pp_v   = (ev / (n_p * DT_S)) * H_FG
+                w_end_ = max(0.0, w_acc - ev)
             else:
-                pp_v = 0.0; w_end = w_acc
+                pp_v = 0.0; w_end_ = w_acc
             T_t = float(T_cur)
             for s in range(N_SUB):
                 T_t = rk4_step(T_t, DT_S, fb(sP if s < n else pp_v))
-            if _sim_residual(T_t, w_end) <= T_set:
-                return n * DT_S
+            if _sim_residual(T_t, w_end_) <= T_set:
+                opt_s = n * DT_S; T_end = T_t; w_end = w_end_
+                break
 
-        # Phase 2 : try additional full 15-min steps
-        T_p, w_p = float(T_cur), float(water_on_skin)
-        for extra in range(max(0, round(misting_min / STEP_MIN) - 1)):
-            w_f = w_p + net_b * N_SUB * DT_S; T_f = T_p
-            for _ in range(N_SUB):
-                T_f = rk4_step(T_f, DT_S, fb(sP))
-            if _sim_residual(T_f, w_f) <= T_set:
-                return (extra + 2) * STEP_MIN * 60.0
-            T_p, w_p = T_f, w_f
+        # ── Phase 2 : additional full 15-min steps if phase 1 insufficient ──
+        if opt_s is None:
+            T_p, w_p = float(T_cur), float(water_on_skin)
+            for extra in range(max(0, round(misting_min / STEP_MIN) - 1)):
+                w_f = w_p + net_b * N_SUB * DT_S; T_f = T_p
+                for _ in range(N_SUB):
+                    T_f = rk4_step(T_f, DT_S, fb(sP))
+                if _sim_residual(T_f, w_f) <= T_set:
+                    opt_s = (extra + 2) * STEP_MIN * 60.0; T_end = T_f; w_end = w_f
+                    break
+                T_p, w_p = T_f, w_f
+            if opt_s is None:
+                opt_s = misting_min * 60.0
 
-        return misting_min * 60.0  # fallback: use max configured duration
+        # ── Phase 3 : post-spray lookahead — réduire si tendance trop abrupte ──
+        spray_end_t = t + opt_s / 3600.0
+        T_min_post  = _post_T_min(T_end, w_end, spray_end_t)
+        if T_min_post < T_POST_MIN:
+            # Recherche binaire : durée maximale de spray où T_min_post reste ≥ T_POST_MIN
+            # (spray plus court → T_end plus élevé → chute post-spray moins profonde)
+            lo_s, hi_s = DT_S, opt_s
+            for _ in range(6):
+                mid_s = (lo_s + hi_s) / 2.0
+                n_m   = max(1, min(N_SUB, round(mid_s / DT_S)))
+                T_m, w_m = _sim_spray_state(n_m)
+                t_m   = t + n_m * DT_S / 3600.0
+                if _post_T_min(T_m, w_m, t_m) >= T_POST_MIN:
+                    lo_s = mid_s   # cette durée est sûre, peut essayer plus long
+                else:
+                    hi_s = mid_s   # trop long, réduire
+            opt_s = lo_s
+
+        return opt_s
 
     def _do_trigger_misting(reason):
         nonlocal mode, misting_end_h, t_discomfort, t_red, water_used_L, water_shortfall_L
@@ -483,7 +550,8 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
         Tinf       = w["temp_C"]
         RH         = w["rh_frac"]
         wind_amb   = w["wind_kmh"]
-        is_highway = truck_v > HIGH_SPEED and not is_stopped
+        is_highway      = truck_v > HIGH_SPEED and not is_stopped
+        is_cold_highway = truck_v > 60.0       and not is_stopped  # seuil spécifique surcooldown
 
         # Zone timers (at start of step)
         if T_cur >= T_RED_ZONE:
@@ -510,6 +578,13 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
         low_wind    = vent_percu < WIND_MIST_KMH
         cooldown_ok = (t - last_change_h) >= REGIME_COOLDOWN_H
 
+        # Risque physique de surcooldown : fenêtres ouvertes → T chuterait sous 38°C en 30 min
+        _v_win   = max(wind_amb, 3.0) if is_stopped else max(truck_v, 5.0)
+        _h_win   = h_convection_forcee_sphere_W_m2K(r, _v_win, Tinf, RH)
+        _cool_w  = max(0.0, _h_win * S * (T_cur - Tinf) - Pint(T_cur))
+        cold_risk = (T_cur - _cool_w * 900.0 / C_JK) < 38.0    # T_POST_MIN, horizon 15 min (1 pas ODE)
+        must_close = (is_cold_highway and Tinf < T_EXT_OPEN_MIN) or cold_risk
+
         if not is_misting and time_left_h >= 10.0 / 60.0:
 
             # 0. Urgence froid : T trop basse → fermeture immédiate, sans cooldown
@@ -519,12 +594,17 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
                 regime_events.append({"t_h": round(t, 4), "mode": "ferme",
                                        "reason": f"Urgence froid ({T_cur:.1f}°C) — fermeture immédiate"})
 
-            # 1. Fin brumisation → ouvert
+            # 1. Fin brumisation → ouvert (ou ferme si risque surcooldown)
             elif mode == "brumisation" and t >= misting_end_h - 1e-9:
-                mode = "ouvert"; t_red = 0.0; t_discomfort = 0.0
-                last_change_h = t
-                regime_events.append({"t_h": round(t, 4), "mode": "ouvert",
-                                       "reason": "Fin brumisation — refroidissement maintenu"})
+                t_red = 0.0; t_discomfort = 0.0; last_change_h = t
+                if must_close:
+                    mode = "ferme"; water_on_skin = 0.0
+                    regime_events.append({"t_h": round(t, 4), "mode": "ferme",
+                                           "reason": f"Fin brumisation — T ext froide ({Tinf:.1f}°C), fenêtres fermées"})
+                else:
+                    mode = "ouvert"
+                    regime_events.append({"t_h": round(t, 4), "mode": "ouvert",
+                                           "reason": "Fin brumisation — refroidissement maintenu"})
 
             # 2a. Chaleur extrême : T_ext ≥ 36°C → convection inefficace même avec vent fort
             elif (mode == "ouvert" and T_cur >= T_RED_ZONE and Tinf >= T_EXT_HOT
@@ -540,24 +620,39 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
                     f"Vent faible ({vent_percu:.0f} km/h) — fenêtres insuffisantes (T={T_cur:.1f}°C)")
                 last_change_h = t
 
-            # 3. Fermé + stress → ouvrir fenêtres (toujours en premier)
+            # 3. Fermé + stress → ouvrir fenêtres (sauf risque surcooldown)
             elif mode == "ferme" and t_discomfort >= MIST_PRE_MIN and cooldown_ok:
-                mode = "ouvert"; t_discomfort = 0.0
-                last_change_h = t
-                regime_events.append({"t_h": round(t, 4), "mode": "ouvert",
-                                       "reason": (f"Stress {MIST_PRE_MIN:.0f}min → refroidissement naturel "
-                                                   f"(T={T_cur:.1f}°C, vent {vent_percu:.0f} km/h)")})
+                if must_close:
+                    # Ouverture surrefroidirait → brumisation ciblée si critique, sinon attendre
+                    if T_cur >= T_RED_ZONE and can_mist:
+                        _do_trigger_misting(
+                            f"T ext froide ({Tinf:.1f}°C) — brumisation ciblée (T={T_cur:.1f}°C)")
+                        last_change_h = t
+                else:
+                    mode = "ouvert"; t_discomfort = 0.0
+                    last_change_h = t
+                    regime_events.append({"t_h": round(t, 4), "mode": "ouvert",
+                                           "reason": (f"Stress {MIST_PRE_MIN:.0f}min → refroidissement naturel "
+                                                       f"(T={T_cur:.1f}°C, vent {vent_percu:.0f} km/h)")})
 
-            # 4. Pré-refroidissement avant autoroute
+            # 4. Pré-refroidissement avant autoroute (seulement si T_ext assez chaud)
             elif (mode == "ferme" and T_cur > T_set + 0.1
-                  and not is_highway and highway_ahead and cooldown_ok):
+                  and not is_highway and highway_ahead and cooldown_ok
+                  and not must_close):
                 mode = "ouvert"
                 last_change_h = t
                 regime_events.append({"t_h": round(t, 4), "mode": "ouvert",
                                        "reason": f"Pré-refroidissement avant autoroute (T={T_cur:.1f}°C)"})
 
-            # 5. T objectif atteint → fermer fenêtres (avec cooldown)
-            elif mode == "ouvert" and T_cur <= T_CLOSE_WIN and cooldown_ok:
+            # 5a. Fermeture préventive : risque de surcooldown (physique ou autoroute froide)
+            elif mode == "ouvert" and must_close and cooldown_ok:
+                mode = "ferme"; t_discomfort = 0.0; water_on_skin = 0.0
+                last_change_h = t
+                regime_events.append({"t_h": round(t, 4), "mode": "ferme",
+                                       "reason": f"Fermeture préventive surcooldown (T ext {Tinf:.1f}°C, vent {vent_percu:.0f} km/h)"})
+
+            # 5. T objectif atteint → fermer fenêtres (sans cooldown : fermeture = action protectrice)
+            elif mode == "ouvert" and T_cur <= T_CLOSE_WIN:
                 mode = "ferme"; t_discomfort = 0.0; water_on_skin = 0.0
                 last_change_h = t
                 regime_events.append({"t_h": round(t, 4), "mode": "ferme",
