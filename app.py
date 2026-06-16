@@ -380,7 +380,8 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
     misting_end_h = -1.0
     water_on_skin = 0.0   # kg of spray water remaining on animal (not yet evaporated)
     transpiring   = False # natural sweating active (mirrors run_simulation_core logic)
-    water_used_L  = 0.0   # total water consumed across all misting events (liters)
+    water_used_L      = 0.0   # total water consumed across all misting events (liters)
+    water_shortfall_L = 0.0   # water that would have been needed but wasn't available
 
     regime_events  = [{"t_h": 0.0, "mode": "ferme", "reason": "Départ"}]
     misting_events = []
@@ -444,15 +445,17 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
         return misting_min * 60.0  # fallback: use max configured duration
 
     def _do_trigger_misting(reason):
-        nonlocal mode, misting_end_h, t_discomfort, t_red, water_used_L
-        opt_s   = _calc_opt_spray_s()
-        water_L = n_animals * MIST_KG_S * opt_s        # liters needed for this event
-        w_avail = ((available_water_L - water_used_L)
-                   if available_water_L is not None else float('inf'))
-        if water_L > w_avail:
-            # Clip spray to available water
+        nonlocal mode, misting_end_h, t_discomfort, t_red, water_used_L, water_shortfall_L
+        opt_s        = _calc_opt_spray_s()
+        water_needed = n_animals * MIST_KG_S * opt_s
+        w_avail      = ((available_water_L - water_used_L)
+                        if available_water_L is not None else float('inf'))
+        if water_needed > w_avail:
+            water_shortfall_L += water_needed - w_avail
             opt_s   = (w_avail / (n_animals * MIST_KG_S)) if n_animals * MIST_KG_S > 0 else 0.0
             water_L = w_avail
+        else:
+            water_L = water_needed
         water_used_L  += water_L
         mode           = "brumisation"
         misting_end_h  = t + opt_s / 3600.0
@@ -640,12 +643,13 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
     water_remaining_L = ((available_water_L - water_used_L)
                          if available_water_L is not None else None)
     return {
-        "series":             {"t_h": t_arr, "T_C": T_arr, "transpiring": transp_arr},
-        "regime_events":      regime_events,
-        "misting_events":     misting_events,
-        "water_used_L":       round(water_used_L, 2),
-        "water_remaining_L":  round(water_remaining_L, 2) if water_remaining_L is not None else None,
-        "available_water_L":  available_water_L,
+        "series":              {"t_h": t_arr, "T_C": T_arr, "transpiring": transp_arr},
+        "regime_events":       regime_events,
+        "misting_events":      misting_events,
+        "water_used_L":        round(water_used_L, 2),
+        "water_remaining_L":   round(water_remaining_L, 2) if water_remaining_L is not None else None,
+        "water_shortfall_L":   round(water_shortfall_L, 2),
+        "available_water_L":   available_water_L,
     }
 
 
@@ -813,9 +817,9 @@ def make_payload(masse_kg, qv, rho, duration_h, n_points, regimes):
 
 
 def classify_risk(T_max):
-    if T_max > 41.0: return "danger"
-    if T_max > 40.0: return "warning"
-    if T_max > 39.5: return "caution"
+    if T_max > 41.0:  return "danger"
+    if T_max > 40.0:  return "warning"
+    if T_max >= 39.5: return "caution"
     return "ok"
 
 
@@ -838,8 +842,9 @@ def geocode():
     try:
         r = req_lib.get(
             "https://nominatim.openstreetmap.org/search",
-            params={"q": q, "format": "json", "limit": 5, "countrycodes": "fr,be,ch,lu"},
-            headers={"User-Agent": "SiteSphere-Transport/1.0 cisco.bosma@gmail.com"},
+            params={"q": q, "format": "json", "limit": 5,
+                    "countrycodes": "fr,be,ch,lu,de,es,it,pt,nl,at,pl,cz,sk,hu,ro,bg,hr,si,gr,dk,se,no,fi,ie,gb,ee,lv,lt,rs,ba,me,mk,al,cy,mt"},
+            headers={"User-Agent": "SiteSphere-Transport/1.0 (cisco.bosma@gmail.com)"},
             timeout=5,
         )
         return jsonify(r.json())
@@ -959,6 +964,7 @@ def api_simulate():
                 "risk":               risk_adaptive,
                 "water_used_L":       adap["water_used_L"],
                 "water_remaining_L":  adap["water_remaining_L"],
+                "water_shortfall_L":  adap["water_shortfall_L"],
                 "available_water_L":  adap["available_water_L"],
             }
 

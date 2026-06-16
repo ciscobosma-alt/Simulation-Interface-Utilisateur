@@ -24,8 +24,8 @@ const STRINGS = {
     stop_label:       "Étape",
     stop_duration:    "Durée d'arrêt",
     distance:         "Distance :",
-    duree_route:      "Durée trajet :",
-    duree_arrets:     "Dont arrêts :",
+    duree_route:      "Durée du voyage :",
+    duree_arrets:     "dont arrêts :",
     vitesse:          "Vitesse moy. :",
     date_depart_label:  "Date de départ",
     heure_depart_label: "Heure de départ",
@@ -75,8 +75,8 @@ const STRINGS = {
     stop_label:       "Stop",
     stop_duration:    "Stop duration",
     distance:         "Distance:",
-    duree_route:      "Driving time:",
-    duree_arrets:     "Stops total:",
+    duree_route:      "Journey time:",
+    duree_arrets:     "of which stops:",
     vitesse:          "Avg. speed:",
     date_depart_label:  "Departure date",
     heure_depart_label: "Departure time",
@@ -129,7 +129,7 @@ let map, routeLine = null;
 const mapMarkers = [];
 
 function initMap() {
-  map = L.map('map', { zoomControl: true, scrollWheelZoom: false }).setView([46.5, 2.3], 6);
+  map = L.map('map', { zoomControl: true, scrollWheelZoom: true }).setView([46.5, 2.3], 6);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution: '© OpenStreetMap © CARTO',
     subdomains: 'abcd', maxZoom: 19
@@ -377,12 +377,22 @@ async function calcRoute() {
 
     routeAvgSpeedKmh = MAX_TRUCK_KMH;
     routeDurationH   = Math.max(0.5, cumulH);
-    const drivingH   = cumulH - orderedStops.reduce((s, st) => s + st.stopDurationH, 0);
-    const h = Math.floor(drivingH), m = Math.round((drivingH - h) * 60);
+    const totalStopH = orderedStops.reduce((s, st) => s + st.stopDurationH, 0);
+    const totalH = routeDurationH;
+    const th = Math.floor(totalH), tm = Math.round((totalH - th) * 60);
 
     document.getElementById('route_dist').textContent = ` ${distKm.toFixed(0)} km`;
-    document.getElementById('route_dur').textContent  = ` ${h}h${m > 0 ? m + 'min' : ''}`;
+    document.getElementById('route_dur').textContent  = ` ${th}h${tm > 0 ? tm + 'min' : ''}`;
     document.getElementById('route_meta').style.display = 'flex';
+
+    const stopsItem = document.getElementById('route_stops_item');
+    if (totalStopH > 0 && stopsItem) {
+      const sh = Math.floor(totalStopH), sm = Math.round((totalStopH - sh) * 60);
+      document.getElementById('route_stops_dur').textContent = ` ${sh}h${sm > 0 ? sm + 'min' : ''}`;
+      stopsItem.style.display = '';
+    } else if (stopsItem) {
+      stopsItem.style.display = 'none';
+    }
 
     // Refresh map
     mapMarkers.forEach(mk => mk.remove()); mapMarkers.length = 0;
@@ -560,9 +570,18 @@ function buildCurveToggles(traces) {
   _allTraces = traces;
   _traceVis  = {};
 
-  // Overlay traces (showlegend:false) are always visible, not user-togglable
+  // Overlay traces (showlegend:false) inherit their parent curve's visibility
+  const TRANSP_PARENT = {
+    'Transpiration':             currentLang === 'fr' ? 'Fenêtres fermées' : 'Windows closed',
+    'Transpiration (adaptatif)': 'Stratégie adaptative',
+  };
   traces.forEach(tr => {
-    _traceVis[tr.name] = tr.showlegend === false ? true : !HIDDEN_BY_DEFAULT.has(tr.name);
+    if (tr.showlegend === false) {
+      const parent = TRANSP_PARENT[tr.name];
+      _traceVis[tr.name] = parent ? !HIDDEN_BY_DEFAULT.has(parent) : true;
+    } else {
+      _traceVis[tr.name] = !HIDDEN_BY_DEFAULT.has(tr.name);
+    }
   });
 
   const COLOR_MAP = {
@@ -595,6 +614,12 @@ function buildCurveToggles(traces) {
 
 function toggleCurve(name, visible) {
   _traceVis[name] = visible;
+  // Sync transpiration overlays to their parent curve
+  if (name === 'Fenêtres fermées' || name === 'Windows closed') {
+    _traceVis['Transpiration'] = visible;
+  } else if (name === 'Stratégie adaptative') {
+    _traceVis['Transpiration (adaptatif)'] = visible;
+  }
   const active = _allTraces.filter(tr => _traceVis[tr.name]);
   const gd = document.getElementById('plotly-main');
   Plotly.react(gd, active, gd.layout, { responsive: true, displaylogo: false, displayModeBar: false });
@@ -930,6 +955,77 @@ function renderResults(data) {
       </div>
       <div style="font-size:0.72rem;color:#86868b;margin-top:6px">${wLeft} L restants après le trajet</div>`;
     document.getElementById('graphCard').insertAdjacentElement('afterend', card);
+  }
+
+  // ── Graphe réservoir + message eau — uniquement si brumisation active ──────
+  const prevWCC = document.getElementById('waterChartCard');
+  if (prevWCC) prevWCC.remove();
+
+  if (adaptive && adaptive.misting_events && adaptive.misting_events.length > 0
+      && adaptive.available_water_L !== null) {
+
+    // Courbe en escalier du niveau du réservoir
+    const xData = [0];
+    const yData = [adaptive.available_water_L];
+    let lvl = adaptive.available_water_L;
+    for (const me of adaptive.misting_events) {
+      xData.push(me.t_start_h);
+      lvl = Math.max(0, lvl - me.water_L);
+      yData.push(lvl);
+    }
+    xData.push(routeDurationH);
+    yData.push(lvl);
+
+    const isShortage = (adaptive.water_shortfall_L || 0) > 0.01;
+    const shortfall  = (adaptive.water_shortfall_L || 0).toFixed(1);
+    const remaining  = (adaptive.water_remaining_L || 0).toFixed(1);
+
+    const msgHtml = isShortage
+      ? `<div style="padding:10px 14px;border-radius:10px;background:rgba(255,69,58,0.1);border:1px solid rgba(255,69,58,0.22);color:#ff453a;font-size:0.82rem;font-weight:500;margin-bottom:10px">
+           ⚠ Eau insuffisante — il manquait <strong>${shortfall} L</strong> pour assurer le refroidissement sur l'ensemble du trajet.
+         </div>`
+      : `<div style="padding:10px 14px;border-radius:10px;background:rgba(48,209,88,0.07);border:1px solid rgba(48,209,88,0.18);color:#30d158;font-size:0.82rem;font-weight:500;margin-bottom:10px">
+           ✓ Réservoir suffisant — <strong>${remaining} L</strong> restants à l'arrivée.
+         </div>`;
+
+    const wcc = document.createElement('div');
+    wcc.id = 'waterChartCard';
+    wcc.style.cssText = 'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:14px 18px;margin-top:12px';
+    wcc.innerHTML = `
+      <div style="font-size:0.78rem;color:#86868b;margin-bottom:10px">Niveau du réservoir au cours du trajet</div>
+      ${msgHtml}
+      <div id="plotly-reservoir" style="height:160px"></div>`;
+
+    const anchor = document.getElementById('waterCard') || document.getElementById('graphCard');
+    anchor.insertAdjacentElement('afterend', wcc);
+
+    const lineColor = isShortage ? '#ff453a' : '#2997ff';
+    const fillColor = isShortage ? 'rgba(255,69,58,0.08)' : 'rgba(41,151,255,0.1)';
+    Plotly.react('plotly-reservoir',
+      [{
+        x: xData, y: yData,
+        type: 'scatter', mode: 'lines',
+        fill: 'tozeroy', fillcolor: fillColor,
+        line: { color: lineColor, width: 2, shape: 'hv' },
+        hovertemplate: '%{y:.1f} L<extra>Réserve</extra>',
+      }],
+      {
+        paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+        margin: { l: 46, r: 16, t: 4, b: 34 },
+        font: { color: '#86868b', family: '-apple-system,sans-serif', size: 10 },
+        xaxis: { title: { text: 'Temps (h)', font: { size: 10 } },
+                 gridcolor: 'rgba(255,255,255,0.05)', tickcolor: 'rgba(255,255,255,0.08)' },
+        yaxis: { title: { text: 'L', font: { size: 10 } }, rangemode: 'nonnegative',
+                 gridcolor: 'rgba(255,255,255,0.05)', tickcolor: 'rgba(255,255,255,0.08)' },
+        shapes: [{ type: 'line', xref: 'paper', yref: 'y', x0: 0, x1: 1, y0: 0, y1: 0,
+                   line: { color: 'rgba(255,69,58,0.35)', width: 1, dash: 'dash' } }],
+        hovermode: 'x unified',
+        hoverlabel: { bgcolor: '#1c1c1e', bordercolor: 'rgba(255,255,255,0.12)',
+                      font: { color: '#e6edf3', size: 11 } },
+        showlegend: false,
+      },
+      { responsive: true, displaylogo: false, displayModeBar: false }
+    );
   }
 
   // Event log
