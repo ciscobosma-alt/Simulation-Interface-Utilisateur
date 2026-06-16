@@ -723,6 +723,17 @@ function renderResults(data) {
     }
   }
 
+  // Adaptive not needed note
+  const adaptNoteEl = document.getElementById('adaptiveNotNeeded');
+  if (adaptNoteEl) {
+    if (data.adaptive_not_needed) {
+      adaptNoteEl.textContent = '✓ Stratégie adaptative non requise — fenêtres fermées suffisantes sur ce trajet.';
+      adaptNoteEl.style.display = '';
+    } else {
+      adaptNoteEl.style.display = 'none';
+    }
+  }
+
   setTimeout(() => {
     banner.classList.add('visible');
     document.getElementById('graphCard').classList.add('visible');

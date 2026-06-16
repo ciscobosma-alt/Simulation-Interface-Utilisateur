@@ -362,11 +362,14 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
         cold = k_h * max(0.0, (T_set - Delta) - T_C)
         return float(np.clip(P0_W - hot + cold, Pmin, Pmax))
 
-    T_DISCOMFORT    = 38.7   # °C  stress thermique
-    T_RED_ZONE      = 39.5   # °C  zone critique
-    T_CLOSE_WIN     = 37.8   # °C  refermer fenêtres
-    HIGH_SPEED      = 70.0   # km/h  autoroute
-    MIST_PRE_MIN    = 10.0   # min  seuil stress → action (fenêtres ou brumisation)
+    T_DISCOMFORT      = 39.0   # °C  stress thermique → ouverture fenêtres
+    T_RED_ZONE        = 39.5   # °C  zone critique
+    T_CLOSE_WIN       = 38.5   # °C  refermer fenêtres
+    T_EMERGENCY_CLOSE = 37.5   # °C  fermeture d'urgence (hypothermie)
+    HIGH_SPEED        = 70.0   # km/h  autoroute
+    WIND_MIST_KMH     = 50.0   # km/h  en dessous : brumisation plus efficace que fenêtres
+    REGIME_COOLDOWN_H = 0.5    # h   min 30 min entre changements de régime
+    MIST_PRE_MIN      = 10.0   # min  durée de stress avant action
     STEP_MIN        = 15.0   # min  pas ODE
     N_SUB           = 90
     DT_S            = STEP_MIN * 60.0 / N_SUB   # 10 s
@@ -470,6 +473,7 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
         regime_events.append({"t_h": round(t, 4), "mode": "brumisation",
                                "reason": f"{reason} — {opt_s/60:.1f}min calculé"})
 
+    last_change_h = -REGIME_COOLDOWN_H  # permet un premier changement dès le départ
     t = 0.0
     while t <= duration_h + 1e-9:
         w          = nearest_w(t)
@@ -501,57 +505,55 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
                         if available_water_L is not None else float('inf'))
         can_mist     = misting_enabled and w_avail_now > 0
 
+        vent_percu  = max(truck_v, wind_amb)
+        low_wind    = vent_percu < WIND_MIST_KMH
+        cooldown_ok = (t - last_change_h) >= REGIME_COOLDOWN_H
+
         if not is_misting and time_left_h >= 10.0 / 60.0:
 
-            # 1. End of misting → switch to ouvert, reset discomfort timers
-            if mode == "brumisation" and t >= misting_end_h - 1e-9:
-                mode         = "ouvert"
-                t_red        = 0.0
-                t_discomfort = 0.0
+            # 0. Urgence froid : T trop basse → fermeture immédiate, sans cooldown
+            if mode == "ouvert" and T_cur < T_EMERGENCY_CLOSE:
+                mode = "ferme"; t_discomfort = 0.0; water_on_skin = 0.0
+                last_change_h = t
+                regime_events.append({"t_h": round(t, 4), "mode": "ferme",
+                                       "reason": f"Urgence froid ({T_cur:.1f}°C) — fermeture immédiate"})
+
+            # 1. Fin brumisation → ouvert
+            elif mode == "brumisation" and t >= misting_end_h - 1e-9:
+                mode = "ouvert"; t_red = 0.0; t_discomfort = 0.0
+                last_change_h = t
                 regime_events.append({"t_h": round(t, 4), "mode": "ouvert",
                                        "reason": "Fin brumisation — refroidissement maintenu"})
 
-            # 2. Emergency: windows open but stress persists → windows insufficient → mist
-            elif mode == "ouvert" and t_discomfort >= MIST_PRE_MIN and can_mist:
+            # 2. Fenêtres ouvertes + stress persistant + vent faible → brumisation
+            elif (mode == "ouvert" and t_discomfort >= MIST_PRE_MIN
+                  and low_wind and can_mist and cooldown_ok):
                 _do_trigger_misting(
-                    f"Urgence — fenêtres insuffisantes (T={T_cur:.1f}°C, {MIST_PRE_MIN:.0f}min)")
+                    f"Vent faible ({vent_percu:.0f} km/h) — fenêtres insuffisantes (T={T_cur:.1f}°C)")
+                last_change_h = t
 
-            # 3. Stress in closed mode → action depends on speed and severity
-            elif mode == "ferme" and t_discomfort >= MIST_PRE_MIN:
-                if is_highway and T_cur >= T_RED_ZONE and can_mist:
-                    # Critical zone at highway → misting immediately (windows risk wind stress)
-                    _do_trigger_misting(
-                        f"Autoroute — zone critique (T={T_cur:.1f}°C) → brumisation directe")
-                else:
-                    # Moderate stress, or non-highway, or no water → try natural cooling first
-                    # (at highway: only if T < T_RED_ZONE; escalates to misting if insufficient)
-                    mode         = "ouvert"
-                    t_discomfort = 0.0
-                    if is_highway:
-                        reason = f"Autoroute — ouverture brève, T<39.5°C (T={T_cur:.1f}°C)"
-                    else:
-                        reason = f"Stress {MIST_PRE_MIN:.0f}min → refroidissement naturel (T={T_cur:.1f}°C)"
-                    if not can_mist and is_highway:
-                        reason = f"Dernier recours — eau épuisée (T={T_cur:.1f}°C)"
-                    regime_events.append({"t_h": round(t, 4), "mode": "ouvert", "reason": reason})
+            # 3. Fermé + stress → ouvrir fenêtres (toujours en premier)
+            elif mode == "ferme" and t_discomfort >= MIST_PRE_MIN and cooldown_ok:
+                mode = "ouvert"; t_discomfort = 0.0
+                last_change_h = t
+                regime_events.append({"t_h": round(t, 4), "mode": "ouvert",
+                                       "reason": (f"Stress {MIST_PRE_MIN:.0f}min → refroidissement naturel "
+                                                   f"(T={T_cur:.1f}°C, vent {vent_percu:.0f} km/h)")})
 
-            # 4. Pre-cooling before upcoming highway segment (low speed, T slightly elevated)
-            elif mode == "ferme" and T_cur > T_set + 0.1 and not is_highway and highway_ahead:
+            # 4. Pré-refroidissement avant autoroute
+            elif (mode == "ferme" and T_cur > T_set + 0.1
+                  and not is_highway and highway_ahead and cooldown_ok):
                 mode = "ouvert"
+                last_change_h = t
                 regime_events.append({"t_h": round(t, 4), "mode": "ouvert",
                                        "reason": f"Pré-refroidissement avant autoroute (T={T_cur:.1f}°C)"})
 
-            # 5. Close windows when temperature is back to normal
-            elif mode == "ouvert":
-                if T_cur <= T_CLOSE_WIN:
-                    mode = "ferme"; t_discomfort = 0.0; water_on_skin = 0.0
-                    regime_events.append({"t_h": round(t, 4), "mode": "ferme",
-                                           "reason": f"T objectif atteint ({T_cur:.1f}°C) — fermeture"})
-                elif is_highway and T_cur < T_DISCOMFORT:
-                    # T acceptable on highway → close to reduce wind stress
-                    mode = "ferme"; water_on_skin = 0.0
-                    regime_events.append({"t_h": round(t, 4), "mode": "ferme",
-                                           "reason": f"Autoroute — T acceptable ({T_cur:.1f}°C)"})
+            # 5. T objectif atteint → fermer fenêtres (avec cooldown)
+            elif mode == "ouvert" and T_cur <= T_CLOSE_WIN and cooldown_ok:
+                mode = "ferme"; t_discomfort = 0.0; water_on_skin = 0.0
+                last_change_h = t
+                regime_events.append({"t_h": round(t, 4), "mode": "ferme",
+                                       "reason": f"T objectif atteint ({T_cur:.1f}°C) — fermeture"})
 
         # Re-evaluate after decisions
         is_misting = misting_end_h > 0 and t < misting_end_h - 1e-9
@@ -948,41 +950,44 @@ def api_simulate():
         # ── Étape 3 : stratégie adaptative (si activée) ────────────
         res_adaptive = None
         adap_chaud = adap_froid = None
+        adaptive_not_needed = False
         if adaptive_enabled:
-            adap = simulate_adaptive(
-                hourly_weather, duration_h, poids, qv, rho,
-                misting_min=misting_min, misting_enabled=misting_enabled, seed=seed,
-                n_animals=n_animals, available_water_L=available_water_L,
-            )
-            T_max_adap    = max(adap["series"]["T_C"])
-            risk_adaptive = classify_risk(T_max_adap)
-            res_adaptive  = {
-                "series":             adap["series"],
-                "regime_events":      adap["regime_events"],
-                "misting_events":     adap["misting_events"],
-                "T_max":              round(T_max_adap, 2),
-                "risk":               risk_adaptive,
-                "water_used_L":       adap["water_used_L"],
-                "water_remaining_L":  adap["water_remaining_L"],
-                "water_shortfall_L":  adap["water_shortfall_L"],
-                "available_water_L":  adap["available_water_L"],
-            }
+            if risk_ferme == "ok":
+                adaptive_not_needed = True  # fenêtres fermées suffisantes, pas d'intervention
+            else:
+                adap = simulate_adaptive(
+                    hourly_weather, duration_h, poids, qv, rho,
+                    misting_min=misting_min, misting_enabled=misting_enabled, seed=seed,
+                    n_animals=n_animals, available_water_L=available_water_L,
+                )
+                T_max_adap    = max(adap["series"]["T_C"])
+                risk_adaptive = classify_risk(T_max_adap)
+                res_adaptive  = {
+                    "series":             adap["series"],
+                    "regime_events":      adap["regime_events"],
+                    "misting_events":     adap["misting_events"],
+                    "T_max":              round(T_max_adap, 2),
+                    "risk":               risk_adaptive,
+                    "water_used_L":       adap["water_used_L"],
+                    "water_remaining_L":  adap["water_remaining_L"],
+                    "water_shortfall_L":  adap["water_shortfall_L"],
+                    "available_water_L":  adap["available_water_L"],
+                }
 
-            # Cas extrêmes adaptatifs : rejouer le planning nominal sur le modèle perturbé
-            # (pas de re-décision — même stratégie, physique différente)
-            if cas_extremes_enabled:
-                f_ch  = pct_chaud / 100.0
-                f_fr  = pct_froid / 100.0
-                adap_chaud = replay_adaptive_schedule(
-                    adap["regime_events"], adap["misting_events"],
-                    hourly_weather, duration_h,
-                    poids * (1 + f_ch), qv * (1 + f_ch), rho,
-                )
-                adap_froid = replay_adaptive_schedule(
-                    adap["regime_events"], adap["misting_events"],
-                    hourly_weather, duration_h,
-                    poids * (1 - f_fr), qv * (1 - f_fr), rho,
-                )
+                # Cas extrêmes adaptatifs : rejouer le planning nominal sur le modèle perturbé
+                if cas_extremes_enabled:
+                    f_ch  = pct_chaud / 100.0
+                    f_fr  = pct_froid / 100.0
+                    adap_chaud = replay_adaptive_schedule(
+                        adap["regime_events"], adap["misting_events"],
+                        hourly_weather, duration_h,
+                        poids * (1 + f_ch), qv * (1 + f_ch), rho,
+                    )
+                    adap_froid = replay_adaptive_schedule(
+                        adap["regime_events"], adap["misting_events"],
+                        hourly_weather, duration_h,
+                        poids * (1 - f_fr), qv * (1 - f_fr), rho,
+                    )
 
         # Build weather display series
         weather_series = {
@@ -1011,7 +1016,8 @@ def api_simulate():
             "risk_ouvert":      risk_ouvert,
             "T_max_ferme":      round(T_max_ferm, 2),
             "T_max_ouvert":     round(T_max_ouv, 2) if T_max_ouv is not None else None,
-            "strategy_needed":  risk_ferme != "ok",
+            "strategy_needed":      risk_ferme != "ok",
+            "adaptive_not_needed":  adaptive_not_needed,
             "breed_name":       breed["fr"],
             "avg_speed_kmh":    round(avg_speed_kmh, 1),
             "stops":            route_stops,
