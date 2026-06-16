@@ -1,0 +1,1146 @@
+// ═══════════════════════════════════════════════════════
+// SiteSphere Transport — Interface Routier
+// ═══════════════════════════════════════════════════════
+
+// ── Traductions ──────────────────────────────────────────────────────────────
+const STRINGS = {
+  fr: {
+    hero_eyebrow:     "Bien-être animal en transport",
+    hero_title:       "Protégez votre troupeau en transit",
+    hero_sub:         "Simulez la température de vos bovins pendant le transport routier. En quelques secondes, sachez si votre chargement est en sécurité.",
+    hero_cta:         "Lancer une simulation",
+    scroll_hint:      "↓ Commencer",
+    s1_title:         "Vos animaux",
+    race_label:       "Race",
+    n_bovins_label:   "Nombre d'animaux",
+    poids_label:      "Poids moyen (kg)",
+    age_label:        "Âge moyen (mois)",
+    strategy_title:   "Stratégie adaptive — en cours de développement",
+    strategy_desc:    "Le graphe compare le trajet fenêtres fermées et fenêtres ouvertes. La logique de choix automatique sera définie prochainement.",
+    s2_title:         "Itinéraire",
+    depart_label:     "Ville de départ",
+    arrivee_label:    "Ville d'arrivée",
+    add_stop:         "Ajouter une étape",
+    stop_label:       "Étape",
+    stop_duration:    "Durée d'arrêt",
+    distance:         "Distance :",
+    duree_route:      "Durée trajet :",
+    duree_arrets:     "Dont arrêts :",
+    vitesse:          "Vitesse moy. :",
+    date_depart_label:  "Date de départ",
+    heure_depart_label: "Heure de départ",
+    s3_title:         "Mode de ventilation",
+    mode_ferme:       "Fenêtres fermées",
+    mode_ferme_desc:  "Convection naturelle uniquement. Aucune circulation d'air forcée.",
+    mode_ouvert:      "Fenêtres ouvertes",
+    mode_ouvert_desc: "Circulation d'air naturelle par les ouvertures latérales du camion.",
+    mode_urgence:     "Mode urgence",
+    mode_urgence_desc:"Mouillage + évaporation forcée. Refroidissement maximal d'urgence.",
+    simulate_btn:     "Simuler le trajet",
+    graph_title:      "Température interne du bovin au cours du trajet",
+    weather_title:    "Conditions météorologiques",
+    temp_ext:         "Temp. extérieure",
+    humidity:         "Humidité moy.",
+    wind:             "Vent moy.",
+    risk_ok_title:    "Confort thermique maintenu ✓",
+    risk_ok_desc:     "Les bovins maintiennent une température normale tout au long du trajet. Aucune intervention nécessaire.",
+    risk_caution_title:"Légère élévation thermique",
+    risk_caution_desc: "La température dépasse légèrement les valeurs normales. Surveiller les animaux et prévoir une pause si le trajet se prolonge.",
+    risk_warning_title:"Stress thermique — Attention ⚠",
+    risk_warning_desc: "La température atteint des niveaux préoccupants. Un arrêt pour ventilation est fortement recommandé.",
+    risk_danger_title: "Danger — Hyperthermie ❌",
+    risk_danger_desc:  "La température est dangereusement élevée. Arrêt immédiat et refroidissement d'urgence nécessaires.",
+    no_route:         "Veuillez sélectionner une ville de départ et d'arrivée.",
+    sim_error:        "Erreur de simulation.",
+    computing:        "Calcul en cours…",
+    t_max_label:      "T max",
+  },
+  en: {
+    hero_eyebrow:     "Animal welfare in transport",
+    hero_title:       "Protect your herd in transit",
+    hero_sub:         "Simulate the internal temperature of your cattle during road transport. In seconds, know if your load is safe.",
+    hero_cta:         "Launch a simulation",
+    scroll_hint:      "↓ Start",
+    s1_title:         "Your animals",
+    race_label:       "Breed",
+    strategy_title:   "Adaptive strategy — in development",
+    strategy_desc:    "The graph compares the trip with windows closed vs open. The automatic logic for choosing when to open or activate emergency cooling will be defined soon.",
+    n_bovins_label:   "Number of cattle",
+    poids_label:      "Average weight (kg)",
+    age_label:        "Average age (months)",
+    s2_title:         "Route",
+    depart_label:     "Departure city",
+    arrivee_label:    "Arrival city",
+    add_stop:         "Add a stop",
+    stop_label:       "Stop",
+    stop_duration:    "Stop duration",
+    distance:         "Distance:",
+    duree_route:      "Driving time:",
+    duree_arrets:     "Stops total:",
+    vitesse:          "Avg. speed:",
+    date_depart_label:  "Departure date",
+    heure_depart_label: "Departure time",
+    s3_title:         "Ventilation mode",
+    mode_ferme:       "Windows closed",
+    mode_ferme_desc:  "Natural convection only. No forced air circulation.",
+    mode_ouvert:      "Windows open",
+    mode_ouvert_desc: "Natural airflow through side openings of the truck.",
+    mode_urgence:     "Emergency mode",
+    mode_urgence_desc:"Wetting + forced evaporation. Maximum emergency cooling.",
+    simulate_btn:     "Simulate the trip",
+    graph_title:      "Internal cattle temperature during the trip",
+    weather_title:    "Weather conditions",
+    temp_ext:         "Ext. temperature",
+    humidity:         "Avg. humidity",
+    wind:             "Avg. wind",
+    risk_ok_title:    "Thermal comfort maintained ✓",
+    risk_ok_desc:     "Cattle maintain normal temperature throughout the trip. No intervention needed.",
+    risk_caution_title:"Slight temperature rise",
+    risk_caution_desc: "Temperature slightly exceeds normal values. Monitor animals and plan a break if the trip extends.",
+    risk_warning_title:"Thermal stress — Warning ⚠",
+    risk_warning_desc: "Temperature reaches concerning levels. A ventilation stop is strongly recommended.",
+    risk_danger_title: "Danger — Hyperthermia ❌",
+    risk_danger_desc:  "Temperature is dangerously high. Immediate stop and emergency cooling required.",
+    no_route:         "Please select a departure and arrival city.",
+    sim_error:        "Simulation error.",
+    computing:        "Computing…",
+    t_max_label:      "T max",
+  }
+};
+
+let currentLang = 'fr';
+
+function t(key) { return STRINGS[currentLang][key] || key; }
+
+function setLang(lang) {
+  currentLang = lang;
+  document.querySelectorAll('.lang-btn').forEach(b => {
+    b.classList.toggle('active', b.textContent === lang.toUpperCase());
+  });
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    el.textContent = t(key);
+  });
+  document.documentElement.lang = lang;
+}
+
+// ── Map ──────────────────────────────────────────────────────────────────────
+let map, routeLine = null;
+const mapMarkers = [];
+
+function initMap() {
+  map = L.map('map', { zoomControl: true, scrollWheelZoom: false }).setView([46.5, 2.3], 6);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '© OpenStreetMap © CARTO',
+    subdomains: 'abcd', maxZoom: 19
+  }).addTo(map);
+}
+
+function makeMarkerIcon(color, glow) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:13px;height:13px;background:${color};border:2px solid #fff;border-radius:50%;box-shadow:0 0 10px ${glow}"></div>`,
+    iconSize: [13, 13], iconAnchor: [6, 6],
+  });
+}
+
+// ── City search ───────────────────────────────────────────────────────────────
+let fromCoord = null, toCoord = null;
+let debounceTimers = {};
+
+function setupCitySearch(inputId, sugId, onSelect) {
+  const inp = document.getElementById(inputId);
+  if (!inp) return;
+  const sug = document.getElementById(sugId);
+
+  inp.addEventListener('input', () => {
+    clearTimeout(debounceTimers[inputId]);
+    const q = inp.value.trim();
+    if (q.length < 2) { sug.style.display = 'none'; return; }
+    debounceTimers[inputId] = setTimeout(async () => {
+      try {
+        const res  = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        if (!data.length) { sug.style.display = 'none'; return; }
+        sug.innerHTML = data.slice(0, 5).map((item) => {
+          const label = item.display_name.split(',').slice(0, 3).join(', ');
+          return `<div class="suggestion-item" data-lon="${item.lon}" data-lat="${item.lat}" data-name="${label}">${label}</div>`;
+        }).join('');
+        sug.style.display = 'block';
+        sug.querySelectorAll('.suggestion-item').forEach(el => {
+          el.addEventListener('click', () => {
+            inp.value = el.dataset.name;
+            sug.style.display = 'none';
+            onSelect({ lon: parseFloat(el.dataset.lon), lat: parseFloat(el.dataset.lat), name: el.dataset.name });
+          });
+        });
+      } catch {}
+    }, 300);
+  });
+
+  document.addEventListener('click', e => {
+    if (!inp.contains(e.target) && !sug.contains(e.target)) sug.style.display = 'none';
+  });
+}
+
+function onFromSelected(coord) {
+  fromCoord = coord;
+  if (fromCoord && toCoord) calcRoute();
+}
+function onToSelected(coord) {
+  toCoord = coord;
+  if (fromCoord && toCoord) calcRoute();
+}
+
+// ── Intermediate stops ────────────────────────────────────────────────────────
+let stopCounter = 0;
+const stopsData = {};  // { id: { coord, stopDurationH } }
+
+function addStop() {
+  stopCounter++;
+  const id = stopCounter;
+  stopsData[id] = { coord: null, stopDurationH: 1 };
+
+  const container = document.getElementById('stops_container');
+  const div = document.createElement('div');
+  div.id = `wp_stop_${id}`;
+  div.className = 'wp-row';
+  div.innerHTML = `
+    <div class="wp-aside">
+      <div class="wp-dot wp-dot--stop"></div>
+      <div class="wp-line"></div>
+    </div>
+    <div class="wp-content">
+      <div class="wp-stop-card">
+        <div class="wp-stop-header">
+          <span class="wp-stop-label">${t('stop_label')} ${id}</span>
+          <button class="wp-remove-btn" onclick="removeStop(${id})">×</button>
+        </div>
+        <div class="city-search-wrapper">
+          <input class="input-field" type="text" id="city_stop_${id}" placeholder="Clermont-Ferrand" autocomplete="off">
+          <div class="suggestions" id="sug_stop_${id}"></div>
+        </div>
+        <div class="stop-duration-row">
+          <label>${t('stop_duration')} :</label>
+          <input class="input-field" type="number" id="dur_stop_${id}" value="1" min="0" max="24" step="0.5">
+          <span>h</span>
+        </div>
+      </div>
+    </div>`;
+  container.appendChild(div);
+
+  document.getElementById(`dur_stop_${id}`).addEventListener('input', () => {
+    stopsData[id].stopDurationH = parseFloat(document.getElementById(`dur_stop_${id}`).value) || 0;
+    if (fromCoord && toCoord) calcRoute();
+  });
+
+  setupCitySearch(`city_stop_${id}`, `sug_stop_${id}`, coord => {
+    stopsData[id].coord = coord;
+    if (fromCoord && toCoord) calcRoute();
+  });
+}
+
+function removeStop(id) {
+  delete stopsData[id];
+  const el = document.getElementById(`wp_stop_${id}`);
+  if (el) el.remove();
+  if (fromCoord && toCoord) calcRoute();
+}
+
+function getOrderedStops() {
+  return Object.entries(stopsData)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([, v]) => v)
+    .filter(s => s.coord !== null);
+}
+
+// ── Route calculation (multi-waypoint) ───────────────────────────────────────
+let routeDurationH   = 4;
+let routeCoords      = null;
+let routeSpeedsKmh   = null;
+let routeAvgSpeedKmh = 80;
+let routeStops       = [];  // [{t_arrive_h, duration_h, t_depart_h, lat, lon}]
+const MAX_TRUCK_KMH  = 80;
+
+// ── Adaptive strategy ─────────────────────────────────────────────────────────
+const mistingDurationMin = 60;
+
+// Wizard state — drives simulation params
+let wizAdaptive  = false;   // adaptive strategy on/off
+let wizMisting   = false;   // misting available (only relevant when adaptive on)
+let wizReservoir = 10;      // liters (null = unlimited)
+
+function wizardContinue() {
+  if (!fromCoord || !toCoord) { showAlert('Veuillez sélectionner une ville de départ et d\'arrivée.'); return; }
+  clearAlert();
+  document.getElementById('wizOverlay').classList.add('open');
+  // Scroll overlay to top in case it was scrolled before
+  document.getElementById('wizOverlay').scrollTop = 0;
+}
+
+function wizardBack() {
+  document.getElementById('wizOverlay').classList.remove('open');
+}
+
+function toggleAdaptiveCard() {
+  wizAdaptive = !wizAdaptive;
+  const card  = document.getElementById('cardAdaptive');
+  const chk   = document.getElementById('chkAdaptive');
+  card.classList.toggle('r-on-adaptive', wizAdaptive);
+  chk.className = wizAdaptive ? 'r-check chk-adaptive' : 'r-check';
+  chk.textContent = wizAdaptive ? '✓' : '';
+
+  // Dim/enable misting card based on adaptive state
+  const cardMist = document.getElementById('cardMist');
+  if (!wizAdaptive) {
+    cardMist.classList.add('r-dim');
+    if (wizMisting) { wizMisting = false; _applyMistingState(); }
+  } else {
+    cardMist.classList.remove('r-dim');
+  }
+}
+
+function toggleMistingCard() {
+  if (!wizAdaptive) return;
+  wizMisting = !wizMisting;
+  _applyMistingState();
+}
+
+function _applyMistingState() {
+  const card = document.getElementById('cardMist');
+  const chk  = document.getElementById('chkMist');
+  card.classList.toggle('r-on-mist', wizMisting);
+  chk.className = wizMisting ? 'r-check chk-mist' : 'r-check';
+  chk.textContent = wizMisting ? '✓' : '';
+  // Show/hide reservoir section
+  document.getElementById('wizRes').classList.toggle('res-hidden', !wizMisting);
+}
+
+function setReservoir(val) {
+  wizReservoir = val;
+  document.querySelectorAll('.res-pill').forEach(btn => {
+    const btnVal = btn.textContent === 'Illimité' ? null : parseInt(btn.textContent);
+    btn.classList.toggle('rp-on', btnVal === val);
+  });
+}
+
+function onCasExtremesWizToggle() {
+  const en = document.getElementById('casExtremesEnabled').checked;
+  document.getElementById('extremeBodyWiz').classList.toggle('xopen', en);
+}
+
+function carToTruckKmh(carMs) {
+  const kmh = carMs * 3.6;
+  return kmh <= 50 ? Math.min(kmh, 50) : 80;
+}
+
+async function calcRoute() {
+  if (!fromCoord || !toCoord) return;
+  const orderedStops = getOrderedStops();
+  const allPoints    = [fromCoord, ...orderedStops.map(s => s.coord), toCoord];
+
+  try {
+    const res  = await fetch('/api/route', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ waypoints: allPoints }),
+    });
+    const data = await res.json();
+    if (data.code !== 'Ok' || !data.routes?.length) throw new Error('No route');
+
+    const route  = data.routes[0];
+    const distKm = route.distance / 1000;
+    routeCoords  = route.geometry.coordinates;
+
+    // Merge per-leg annotation speeds
+    const allSpeeds = [];
+    for (const leg of route.legs || []) {
+      for (const s of (leg.annotation?.speed || [])) allSpeeds.push(carToTruckKmh(s));
+    }
+    routeSpeedsKmh = allSpeeds.length ? allSpeeds : null;
+
+    // Build stop timeline
+    routeStops = [];
+    let cumulH = 0;
+    for (let i = 0; i < orderedStops.length; i++) {
+      const legDistKm = route.legs[i].distance / 1000;
+      const legDrivH  = legDistKm / MAX_TRUCK_KMH;
+      cumulH += legDrivH;
+      const durH = orderedStops[i].stopDurationH;
+      routeStops.push({ t_arrive_h: cumulH, duration_h: durH, t_depart_h: cumulH + durH,
+                        lat: orderedStops[i].coord.lat, lon: orderedStops[i].coord.lon });
+      cumulH += durH;
+    }
+    const lastLeg   = route.legs[route.legs.length - 1];
+    const lastDrivH = (lastLeg.distance / 1000) / MAX_TRUCK_KMH;
+    cumulH += lastDrivH;
+
+    routeAvgSpeedKmh = MAX_TRUCK_KMH;
+    routeDurationH   = Math.max(0.5, cumulH);
+    const drivingH   = cumulH - orderedStops.reduce((s, st) => s + st.stopDurationH, 0);
+    const h = Math.floor(drivingH), m = Math.round((drivingH - h) * 60);
+
+    document.getElementById('route_dist').textContent = ` ${distKm.toFixed(0)} km`;
+    document.getElementById('route_dur').textContent  = ` ${h}h${m > 0 ? m + 'min' : ''}`;
+    document.getElementById('route_meta').style.display = 'flex';
+
+    // Refresh map
+    mapMarkers.forEach(mk => mk.remove()); mapMarkers.length = 0;
+    mapMarkers.push(L.marker([fromCoord.lat, fromCoord.lon], { icon: makeMarkerIcon('#2997ff','rgba(41,151,255,0.6)') }).addTo(map));
+    orderedStops.forEach(s => mapMarkers.push(L.marker([s.coord.lat, s.coord.lon], { icon: makeMarkerIcon('#ff9f0a','rgba(255,159,10,0.6)') }).addTo(map)));
+    mapMarkers.push(L.marker([toCoord.lat, toCoord.lon], { icon: makeMarkerIcon('#30d158','rgba(48,209,88,0.6)') }).addTo(map));
+
+    if (routeLine) routeLine.remove();
+    routeLine = L.polyline(routeCoords.map(([ln, lt]) => [lt, ln]), { color: '#2997ff', weight: 3, opacity: 0.85 }).addTo(map);
+    map.fitBounds(routeLine.getBounds(), { padding: [20, 20] });
+
+  } catch {
+    routeCoords = null; routeSpeedsKmh = null; routeStops = [];
+    const R    = 6371;
+    const dLat = (toCoord.lat - fromCoord.lat) * Math.PI / 180;
+    const dLon = (toCoord.lon - fromCoord.lon) * Math.PI / 180;
+    const a    = Math.sin(dLat/2)**2 + Math.cos(fromCoord.lat*Math.PI/180)*Math.cos(toCoord.lat*Math.PI/180)*Math.sin(dLon/2)**2;
+    const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    routeAvgSpeedKmh = 80; routeDurationH = Math.max(0.5, dist / 80);
+    const h = Math.floor(routeDurationH), m = Math.round((routeDurationH - h) * 60);
+    document.getElementById('route_dist').textContent = ` ~${dist.toFixed(0)} km`;
+    document.getElementById('route_dur').textContent  = ` ${h}h${m > 0 ? m + 'min' : ''}`;
+    document.getElementById('route_meta').style.display = 'flex';
+    if (routeLine) routeLine.remove();
+    routeLine = L.polyline([[fromCoord.lat, fromCoord.lon],[toCoord.lat, toCoord.lon]],
+      { color: '#2997ff', weight: 2, dashArray: '6 4', opacity: 0.7 }).addTo(map);
+    map.fitBounds(routeLine.getBounds(), { padding: [20, 20] });
+  }
+}
+
+// ── Race dropdown custom ──────────────────────────────────────────────────────
+function toggleRaceDropdown() {
+  document.getElementById('raceSelect').classList.toggle('open');
+}
+
+function selectRace(value, label) {
+  document.getElementById('race').value        = value;
+  document.getElementById('race_display').textContent = label;
+  document.querySelectorAll('#race_options .custom-option').forEach(el => {
+    el.classList.toggle('selected', el.dataset.value === value);
+  });
+  document.getElementById('raceSelect').classList.remove('open');
+  updateBreedNote();
+}
+
+document.addEventListener('click', e => {
+  const sel = document.getElementById('raceSelect');
+  if (sel && !sel.contains(e.target)) sel.classList.remove('open');
+});
+
+// ── Mode selection (interne, non exposé à l'UI) ───────────────────────────────
+let selectedMode = 'ferme';
+
+function selectMode(mode) {
+  selectedMode = mode;
+  document.querySelectorAll('.mode-card').forEach(c => {
+    c.classList.remove('selected', 'selected-urgence');
+  });
+  const card = document.querySelector(`.mode-card[data-mode="${mode}"]`);
+  if (mode === 'urgence') card.classList.add('selected-urgence');
+  else card.classList.add('selected');
+}
+
+// ── Simulation ────────────────────────────────────────────────────────────────
+async function runSimulation() {
+  const btn = document.getElementById('btnSimulateWiz');
+  const errEl = document.getElementById('alertErrorWiz');
+  const clearWizAlert = () => { if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; } };
+  const showWizAlert  = msg => { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
+  clearWizAlert();
+
+  btn.classList.add('loading');
+  btn.disabled = true;
+  btn.querySelector('.btn-label').textContent = t('computing');
+
+  try {
+    const timeVal       = document.getElementById('heure_depart').value || '08:00';
+    const hourStart     = parseInt(timeVal.split(':')[0]) || 8;
+    const departureDateEl = document.getElementById('date_depart');
+    const departureDate = departureDateEl ? departureDateEl.value : new Date().toISOString().slice(0, 10);
+
+    const body = {
+      poids_kg:            parseFloat(document.getElementById('poids').value) || 350,
+      n_bovins:            parseInt(document.getElementById('n_bovins').value) || 10,
+      race:                document.getElementById('race')?.value || 'autre',
+      duration_h:          routeDurationH,
+      hour_start:          hourStart,
+      departure_date:      departureDate,
+      route_coords:        routeCoords,
+      route_speeds_kmh:    routeSpeedsKmh,
+      route_stops:         routeStops,
+      avg_speed_kmh:       routeAvgSpeedKmh,
+      adaptive_enabled:    wizAdaptive,
+      misting_enabled:     wizMisting,
+      misting_duration_min: mistingDurationMin,
+      available_water_L:   wizAdaptive && wizMisting ? wizReservoir : null,
+      cas_extremes_enabled: document.getElementById('casExtremesEnabled')?.checked ?? false,
+      pct_chaud:           parseFloat(document.getElementById('pct_chaud')?.value) || 20,
+      pct_froid:           parseFloat(document.getElementById('pct_froid')?.value) || 20,
+      seed:                Math.floor(Math.random() * 9999),
+    };
+
+    const res  = await fetch('/api/simulate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+
+    if (!data.ok) { showWizAlert(data.error || t('sim_error')); return; }
+
+    // Close wizard, show results
+    document.getElementById('wizOverlay').classList.remove('open');
+    renderResults(data);
+
+  } catch (e) {
+    showWizAlert(e.message);
+  } finally {
+    btn.classList.remove('loading');
+    btn.disabled = false;
+    btn.querySelector('.btn-label').textContent = 'Simuler le trajet';
+  }
+}
+
+// ── Breed note ────────────────────────────────────────────────────────────────
+const BREED_NOTES = {
+  fr: {
+    holstein:  "Race laitière haute production — métabolisme élevé",
+    normande:  "Race mixte — métabolisme modéré à élevé",
+    simmental: "Race mixte — métabolisme modéré",
+    charolais: "Race à viande française — métabolisme modéré",
+    angus:     "Race à viande — bonne résistance thermique",
+    limousin:  "Race rustique à viande — métabolisme modéré-bas",
+    blonde:    "Race à viande du Sud-Ouest — métabolisme modéré",
+    salers:    "Race rustique de montagne — métabolisme bas",
+    autre:     "Valeurs moyennes génériques",
+  },
+  en: {
+    holstein:  "High-yield dairy breed — elevated metabolism",
+    normande:  "Dual-purpose breed — moderate to high metabolism",
+    simmental: "Dual-purpose breed — moderate metabolism",
+    charolais: "French beef breed — moderate metabolism",
+    angus:     "Beef breed — good heat resistance",
+    limousin:  "Rustic beef breed — moderate-low metabolism",
+    blonde:    "Southwest French beef breed — moderate metabolism",
+    salers:    "Mountain rustic breed — low metabolism",
+    autre:     "Generic average values",
+  }
+};
+
+function updateBreedNote() {
+  const key = document.getElementById('race')?.value || 'autre';
+  const el  = document.getElementById('breed_note');
+  if (el) el.textContent = BREED_NOTES[currentLang]?.[key] || '';
+}
+
+// ── Risk classification ───────────────────────────────────────────────────────
+function classifyRisk(tMax) {
+  if (tMax > 41.0) return 'danger';
+  if (tMax > 40.0) return 'warning';
+  if (tMax > 39.5) return 'caution';
+  return 'ok';
+}
+
+// ── Curve visibility toggles ─────────────────────────────────────────────────
+let _allTraces   = [];   // full trace list, set after each simulation
+let _traceVis    = {};   // { traceName: bool }
+
+// Curves hidden by default (user must opt-in to see them)
+const HIDDEN_BY_DEFAULT = new Set([
+  'Fenêtres ouvertes', 'Windows open', 'T extérieure',
+]);
+
+function buildCurveToggles(traces) {
+  _allTraces = traces;
+  _traceVis  = {};
+
+  // Overlay traces (showlegend:false) are always visible, not user-togglable
+  traces.forEach(tr => {
+    _traceVis[tr.name] = tr.showlegend === false ? true : !HIDDEN_BY_DEFAULT.has(tr.name);
+  });
+
+  const COLOR_MAP = {
+    'Fenêtres fermées':      '#ff453a',
+    'Windows closed':        '#ff453a',
+    'Fenêtres ouvertes':     '#2997ff',
+    'Windows open':          '#2997ff',
+    'Stratégie adaptative':  '#ffd60a',
+    'T extérieure':          'rgba(90,200,250,0.8)',
+  };
+
+  // Only show toggle buttons for named legend traces (exclude showlegend:false overlays)
+  const toggleTraces = traces.filter(tr => tr.showlegend !== false);
+  const container = document.getElementById('curve-toggles');
+  container.innerHTML = toggleTraces.map(tr => {
+    const checked = _traceVis[tr.name];
+    const color   = COLOR_MAP[tr.name] || tr.line?.color || '#86868b';
+    return `<label class="curve-toggle" style="--c:${color}">
+      <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleCurve('${tr.name}', this.checked)">
+      <span class="curve-swatch"></span>
+      <span class="curve-label">${tr.name}</span>
+    </label>`;
+  }).join('');
+
+  // Apply initial visibility (re-render with only the visible traces)
+  const gd = document.getElementById('plotly-main');
+  const active = traces.filter(tr => _traceVis[tr.name]);
+  Plotly.react(gd, active, gd.layout, { responsive: true, displaylogo: false, displayModeBar: false, scrollZoom: false });
+}
+
+function toggleCurve(name, visible) {
+  _traceVis[name] = visible;
+  const active = _allTraces.filter(tr => _traceVis[tr.name]);
+  const gd = document.getElementById('plotly-main');
+  Plotly.react(gd, active, gd.layout, { responsive: true, displaylogo: false, displayModeBar: false });
+}
+
+// ── Adaptive helpers ──────────────────────────────────────────────────────────
+
+function buildRegimeBands(regimeEvents, durationH) {
+  if (!regimeEvents || !regimeEvents.length) return [];
+  const bands = [];
+  for (let i = 0; i < regimeEvents.length; i++) {
+    const start = regimeEvents[i].t_h;
+    const end   = i + 1 < regimeEvents.length ? regimeEvents[i + 1].t_h : durationH;
+    const mode  = regimeEvents[i].mode;
+    if (mode !== 'ferme') bands.push({ start, end, mode });
+  }
+  return bands;
+}
+
+function renderEventLog(adaptive) {
+  const card = document.getElementById('eventLogCard');
+  if (!adaptive || !adaptive.regime_events || !adaptive.regime_events.length) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = '';
+
+  const DOT_COLOR  = { ferme: '#86868b', ouvert: '#ff9f0a', brumisation: '#2997ff' };
+  const MODE_LABEL = { ferme: 'Fenêtres fermées', ouvert: 'Fenêtres ouvertes', brumisation: 'Brumisation' };
+
+  // Merge regime changes + misting details
+  const items = [
+    ...adaptive.regime_events.map(e => ({ t_h: e.t_h, kind: 'regime', mode: e.mode, text: e.reason })),
+    ...(adaptive.misting_events || []).map(e => ({
+      t_h: e.t_start_h, kind: 'misting',
+      mode: 'brumisation',
+      text: `Brumisation ${Math.round((e.t_end_h - e.t_start_h) * 60)} min — déclenchée à T=${e.T_trigger} °C`,
+    })),
+  ].sort((a, b) => a.t_h - b.t_h);
+
+  const rows = items.map(item => {
+    const h   = Math.floor(item.t_h);
+    const m   = Math.round((item.t_h - h) * 60);
+    const hms = `+${h}h${m.toString().padStart(2, '0')}`;
+    const dot = `<span class="ev-dot" style="background:${DOT_COLOR[item.mode] || '#86868b'}"></span>`;
+    const modeTag = `<span class="ev-mode" style="color:${DOT_COLOR[item.mode]}">${MODE_LABEL[item.mode] || item.mode}</span>`;
+    return `<div class="ev-row">
+      <span class="ev-time">${hms}</span>
+      ${dot}
+      ${modeTag}
+      <span class="ev-text">${item.text}</span>
+    </div>`;
+  }).join('');
+
+  card.innerHTML = `
+    <div class="graph-title" style="margin-bottom:14px">Chronologie des interventions</div>
+    <div class="ev-list">${rows}</div>`;
+}
+
+// ── Render results ────────────────────────────────────────────────────────────
+function renderResults(data) {
+  const section = document.getElementById('results');
+  section.style.display = 'block';
+
+  // Risk banner — show adaptive result if available, else ferme
+  const adaptive   = data.adaptive;
+  const riskSource = adaptive ? adaptive.risk : data.risk_ferme;
+  const tMaxShow   = adaptive ? adaptive.T_max : data.T_max_ferme;
+  const risk       = data.risk_ferme;  // always base risk on ferme for banner color
+  const banner     = document.getElementById('riskBanner');
+  banner.className = `risk-banner ${riskSource}`;
+  document.getElementById('riskTitle').textContent = t(`risk_${riskSource}_title`);
+  document.getElementById('riskDesc').textContent  = t(`risk_${riskSource}_desc`);
+  document.getElementById('riskTmax').textContent  = `${tMaxShow.toFixed(1)} °C`;
+
+  // Extreme cases summary line in banner
+  const extEl = document.getElementById('riskExtremes');
+  if (extEl) {
+    const chaudSeries = (adaptive && data.adaptive_chaud) ? data.adaptive_chaud : data.ferme_chaud;
+    const froidSeries = (adaptive && data.adaptive_froid) ? data.adaptive_froid : data.ferme_froid;
+    const stratLabel  = adaptive ? 'Adaptatif' : 'Fermé';
+
+    if (chaudSeries || froidSeries) {
+      const RISK_COLOR = { ok: '#30d158', caution: '#ff9f0a', warning: '#ff9f0a', danger: '#ff453a' };
+      const RISK_ICON  = { ok: '✓', caution: '↑', warning: '⚠', danger: '✗' };
+      const parts = [];
+      if (chaudSeries) {
+        const tm = Math.max(...chaudSeries.T_C);
+        const rk = classifyRisk(tm);
+        parts.push(`cas chaud : <span style="color:${RISK_COLOR[rk]};font-weight:600">${RISK_ICON[rk]} ${tm.toFixed(1)} °C</span>`);
+      }
+      if (froidSeries) {
+        const tm = Math.max(...froidSeries.T_C);
+        const rk = classifyRisk(tm);
+        parts.push(`cas froid : <span style="color:${RISK_COLOR[rk]};font-weight:600">${RISK_ICON[rk]} ${tm.toFixed(1)} °C</span>`);
+      }
+      extEl.innerHTML = `Cas extrêmes (${stratLabel}) — ${parts.join('  ·  ')}`;
+      extEl.style.display = '';
+    } else {
+      extEl.style.display = 'none';
+    }
+  }
+
+  setTimeout(() => {
+    banner.classList.add('visible');
+    document.getElementById('graphCard').classList.add('visible');
+    document.getElementById('weatherCard').classList.add('visible');
+  }, 50);
+
+  // ── Graphe principal ───────────────────────────────────────────
+  const ferme  = data.ferme;
+  const ouvert = data.ouvert;
+
+  const colorFerme    = risk === 'ok' ? '#30d158' : '#ff453a';
+  const colorOuvert   = '#2997ff';
+  const colorAdaptive = '#ffd60a';
+
+  const traces = [];
+
+  traces.push({
+    x: ferme.t_h, y: ferme.T_C,
+    type: 'scatter', mode: 'lines',
+    name: currentLang === 'fr' ? 'Fenêtres fermées' : 'Windows closed',
+    line: { color: colorFerme, width: 2 },
+    hovertemplate: '%{y:.2f} °C<extra>Fermé</extra>',
+  });
+
+  // Transpiration overlay (fermé) — une seule trace avec null comme séparateur de segments
+  // → une seule entrée Plotly, showlegend:false fiable, pas d'"undefined" dans la légende
+  if (data.ferme_timeline) {
+    const transpSegs = data.ferme_timeline.filter(s => s.label && s.label.includes('Transpiration'));
+    const tX = [], tY = [];
+    transpSegs.forEach((seg, idx) => {
+      if (idx > 0) { tX.push(null); tY.push(null); }
+      for (let i = 0; i < ferme.t_h.length; i++) {
+        if (ferme.t_h[i] >= seg.t_debut_h - 0.01 && ferme.t_h[i] <= seg.t_fin_h + 0.01) {
+          tX.push(ferme.t_h[i]); tY.push(ferme.T_C[i]);
+        }
+      }
+    });
+    if (tX.length) {
+      traces.push({ x: tX, y: tY, type: 'scatter', mode: 'lines',
+        name: 'Transpiration', showlegend: false,
+        line: { color: '#ff9f0a', width: 3 },
+        hovertemplate: '%{y:.2f} °C<extra>Transpiration</extra>' });
+    }
+  }
+
+  if (ouvert) {
+    traces.push({
+      x: ouvert.t_h, y: ouvert.T_C,
+      type: 'scatter', mode: 'lines',
+      name: currentLang === 'fr' ? 'Fenêtres ouvertes' : 'Windows open',
+      line: { color: colorOuvert, width: 1.5, dash: 'dash' },
+      hovertemplate: '%{y:.2f} °C<extra>Ouvert</extra>',
+    });
+  }
+
+  if (adaptive) {
+    traces.push({
+      x: adaptive.series.t_h, y: adaptive.series.T_C,
+      type: 'scatter', mode: 'lines',
+      name: 'Stratégie adaptative',
+      line: { color: colorAdaptive, width: 2.5 },
+      hovertemplate: '%{y:.2f} °C<extra>Adaptatif</extra>',
+    });
+
+    // Transpiration overlay (adaptatif) — même approche : une seule trace avec null gaps
+    if (adaptive.series.transpiring) {
+      const transpArr = adaptive.series.transpiring;
+      const tArr = adaptive.series.t_h;
+      const TArr = adaptive.series.T_C;
+      const aX = [], aY = [];
+      let inT = false;
+      for (let i = 0; i < transpArr.length; i++) {
+        if (transpArr[i]) {
+          if (!inT) {
+            if (aX.length) { aX.push(null); aY.push(null); }
+            if (i > 0) { aX.push(tArr[i-1]); aY.push(TArr[i-1]); }
+            inT = true;
+          }
+          aX.push(tArr[i]); aY.push(TArr[i]);
+        } else if (inT) {
+          aX.push(tArr[i]); aY.push(TArr[i]);
+          inT = false;
+        }
+      }
+      if (aX.length) {
+        traces.push({ x: aX, y: aY, type: 'scatter', mode: 'lines',
+          name: 'Transpiration (adaptatif)', showlegend: false,
+          line: { color: '#ff9f0a', width: 3.5 },
+          hovertemplate: '%{y:.2f} °C<extra>Transpiration (adaptatif)</extra>' });
+      }
+    }
+  }
+
+  // ── Cas extrêmes — enveloppe chaud/froid (tracés en pointillés, moins saturés) ──
+  if (data.ferme_chaud) {
+    traces.push({
+      x: data.ferme_chaud.t_h, y: data.ferme_chaud.T_C,
+      type: 'scatter', mode: 'lines',
+      name: 'Fermé — cas chaud',
+      line: { color: risk === 'ok' ? 'rgba(48,209,88,0.45)' : 'rgba(255,69,58,0.45)', width: 1, dash: 'dot' },
+      hovertemplate: '%{y:.2f} °C<extra>Fermé chaud</extra>',
+    });
+  }
+  if (data.ferme_froid) {
+    traces.push({
+      x: data.ferme_froid.t_h, y: data.ferme_froid.T_C,
+      type: 'scatter', mode: 'lines',
+      name: 'Fermé — cas froid',
+      line: { color: risk === 'ok' ? 'rgba(48,209,88,0.25)' : 'rgba(255,69,58,0.25)', width: 1, dash: 'dot' },
+      hovertemplate: '%{y:.2f} °C<extra>Fermé froid</extra>',
+    });
+  }
+  if (data.adaptive_chaud && adaptive) {
+    traces.push({
+      x: data.adaptive_chaud.t_h, y: data.adaptive_chaud.T_C,
+      type: 'scatter', mode: 'lines',
+      name: 'Adaptatif — cas chaud',
+      line: { color: 'rgba(255,214,10,0.45)', width: 1.5, dash: 'dot' },
+      hovertemplate: '%{y:.2f} °C<extra>Adaptatif chaud</extra>',
+    });
+  }
+  if (data.adaptive_froid && adaptive) {
+    traces.push({
+      x: data.adaptive_froid.t_h, y: data.adaptive_froid.T_C,
+      type: 'scatter', mode: 'lines',
+      name: 'Adaptatif — cas froid',
+      line: { color: 'rgba(255,214,10,0.25)', width: 1.5, dash: 'dot' },
+      hovertemplate: '%{y:.2f} °C<extra>Adaptatif froid</extra>',
+    });
+  }
+
+  // ── Température extérieure (axe Y secondaire, droite) ────────────────────────
+  const wData = data.weather;
+  traces.push({
+    x: wData.hours, y: wData.temps_C,
+    type: 'scatter', mode: 'lines',
+    name: 'T extérieure',
+    yaxis: 'y2',
+    line: { color: 'rgba(90,200,250,0.55)', width: 1.5, dash: 'dashdot' },
+    hovertemplate: '%{y:.1f} °C<extra>T ext.</extra>',
+  });
+
+  // Regime bands from adaptive strategy
+  const regimeBands = adaptive ? buildRegimeBands(adaptive.regime_events, routeDurationH) : [];
+  const REGIME_FILL = { ouvert: 'rgba(255,159,10,0.09)', brumisation: 'rgba(41,151,255,0.14)' };
+
+  const layout = {
+    paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+    margin: { l: 50, r: 70, t: 16, b: 40 },
+    font: { color: '#86868b', family: '-apple-system,sans-serif', size: 11 },
+    xaxis: {
+      title: { text: 'Temps (h)', font: { size: 11 } },
+      gridcolor: 'rgba(255,255,255,0.05)', tickcolor: 'rgba(255,255,255,0.1)',
+    },
+    yaxis: {
+      title: { text: 'T animale (°C)', font: { size: 11 } },
+      gridcolor: 'rgba(255,255,255,0.05)', tickcolor: 'rgba(255,255,255,0.1)',
+    },
+    yaxis2: {
+      title: { text: 'T ext. (°C)', font: { size: 10, color: 'rgba(90,200,250,0.7)' } },
+      overlaying: 'y', side: 'right',
+      gridcolor: 'transparent', tickcolor: 'rgba(255,255,255,0.06)',
+      tickfont: { color: 'rgba(90,200,250,0.6)', size: 10 },
+    },
+    shapes: [
+      { type: 'line', xref: 'paper', yref: 'y', x0: 0, x1: 1, y0: 39.5, y1: 39.5,
+        line: { color: 'rgba(255,69,58,0.5)', width: 1, dash: 'dash' } },
+      { type: 'line', xref: 'paper', yref: 'y', x0: 0, x1: 1, y0: 38.5, y1: 38.5,
+        line: { color: 'rgba(48,209,88,0.4)', width: 1, dash: 'dot' } },
+      { type: 'rect', xref: 'paper', yref: 'y', x0: 0, x1: 1, y0: 38.0, y1: 39.5,
+        fillcolor: 'rgba(48,209,88,0.04)', line: { width: 0 } },
+      // Stop bands
+      ...(data.stops || []).map(s => ({
+        type: 'rect', xref: 'x', yref: 'paper',
+        x0: s.t_arrive_h, x1: s.t_depart_h, y0: 0, y1: 1,
+        fillcolor: 'rgba(255,255,255,0.05)', line: { width: 1, color: 'rgba(255,255,255,0.1)', dash: 'dot' },
+        layer: 'below',
+      })),
+      // Adaptive regime bands
+      ...regimeBands.map(b => ({
+        type: 'rect', xref: 'x', yref: 'paper',
+        x0: b.start, x1: b.end, y0: 0, y1: 1,
+        fillcolor: REGIME_FILL[b.mode] || 'rgba(255,255,255,0.04)',
+        line: { width: 0 }, layer: 'below',
+      })),
+    ],
+    annotations: [
+      { xref: 'paper', yref: 'y', x: 1.01, y: 39.5, text: 'Limite', showarrow: false, font: { color: 'rgba(255,69,58,0.7)', size: 10 } },
+      { xref: 'paper', yref: 'y', x: 1.01, y: 38.5, text: 'Normale', showarrow: false, font: { color: 'rgba(48,209,88,0.7)', size: 10 } },
+      ...(data.stops || []).map(s => ({
+        xref: 'x', yref: 'paper',
+        x: (s.t_arrive_h + s.t_depart_h) / 2, y: 0.97,
+        text: `Arrêt ${s.duration_h}h`, showarrow: false,
+        font: { color: 'rgba(255,255,255,0.35)', size: 9 },
+      })),
+    ],
+    hovermode: 'x unified',
+    hoverlabel: {
+      bgcolor: '#1c1c1e',
+      bordercolor: 'rgba(255,255,255,0.12)',
+      font: { color: '#e6edf3', size: 11, family: '-apple-system,sans-serif' },
+    },
+    legend: { bgcolor: 'rgba(0,0,0,0)', bordercolor: 'rgba(255,255,255,0.1)', borderwidth: 1,
+              font: { color: '#e6edf3', size: 10 }, x: 0, y: 1, yanchor: 'top' },
+  };
+
+  Plotly.react('plotly-main', traces, layout, { responsive: true, displaylogo: false, displayModeBar: false, scrollZoom: false });
+  buildCurveToggles(traces);
+
+  // ── Bilan eau — affiché sous le graphe si stratégie adaptative + données eau ──
+  const waterCard = document.getElementById('waterCard');
+  if (waterCard) waterCard.remove();  // remove previous if any
+  if (adaptive && adaptive.water_used_L !== undefined && adaptive.available_water_L !== null) {
+    const wUsed  = adaptive.water_used_L.toFixed(1);
+    const wAvail = adaptive.available_water_L.toFixed(0);
+    const wLeft  = adaptive.water_remaining_L !== null ? adaptive.water_remaining_L.toFixed(1) : '—';
+    const pct    = adaptive.available_water_L > 0
+      ? Math.min(100, Math.round(adaptive.water_used_L / adaptive.available_water_L * 100)) : 0;
+    const barColor = pct > 80 ? '#ff453a' : pct > 50 ? '#ff9f0a' : '#30d158';
+    const card = document.createElement('div');
+    card.id = 'waterCard';
+    card.style.cssText = 'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:14px 18px;margin-top:12px';
+    card.innerHTML = `
+      <div style="font-size:0.78rem;color:#86868b;margin-bottom:8px">Réserve eau brumisation</div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="flex:1;background:rgba(255,255,255,0.06);border-radius:4px;height:6px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:${barColor};border-radius:4px;transition:width .4s"></div>
+        </div>
+        <div style="font-size:0.82rem;color:#e6edf3;white-space:nowrap">${wUsed} / ${wAvail} L utilisés</div>
+      </div>
+      <div style="font-size:0.72rem;color:#86868b;margin-top:6px">${wLeft} L restants après le trajet</div>`;
+    document.getElementById('graphCard').insertAdjacentElement('afterend', card);
+  }
+
+  // Event log
+  renderEventLog(adaptive);
+
+  // Scroll right panel to show results (below the map)
+  setTimeout(() => {
+    const rp  = document.getElementById('rightPanel');
+    const res = document.getElementById('results');
+    if (rp && res) rp.scrollTo({ top: res.offsetTop, behavior: 'smooth' });
+  }, 150);
+
+
+  // Météo — données horaires réelles (Open-Meteo) ou fallback
+  const w = data.weather;
+  const avgTemp = (w.temps_C.reduce((a,b)=>a+b,0) / w.temps_C.length).toFixed(1);
+  const avgRH   = (w.rh_pct.reduce((a,b)=>a+b,0)  / w.rh_pct.length).toFixed(0);
+  const avgVent = (w.wind_kmh.reduce((a,b)=>a+b,0) / w.wind_kmh.length).toFixed(1);
+
+  document.getElementById('wStatTemp').textContent = `${avgTemp} °C`;
+  document.getElementById('wStatRH').textContent   = `${avgRH} %`;
+  document.getElementById('wStatVent').textContent = `${avgVent} km/h`;
+
+  // Source pill
+  const pill = document.getElementById('weatherSourcePill');
+  if (pill) {
+    pill.style.display = '';
+    pill.textContent   = w.source === 'open-meteo' ? 'Open-Meteo (réel)' : 'Données estimées';
+    pill.style.color   = w.source === 'open-meteo' ? '#30d158' : '#ff9f0a';
+    pill.style.background    = w.source === 'open-meteo' ? 'rgba(48,209,88,0.1)' : 'rgba(255,159,10,0.1)';
+    pill.style.borderColor   = w.source === 'open-meteo' ? 'rgba(48,209,88,0.3)' : 'rgba(255,159,10,0.3)';
+  }
+
+  // Graphe météo — 3 courbes : T, humidité, vent
+  const truckSpeed = data.avg_speed_kmh;
+
+  const tickLabels = w.hour_labels;
+  // Show only every Nth label to avoid crowding
+  const step = Math.max(1, Math.ceil(w.hours.length / 12));
+  const tickVals = w.hours.filter((_, i) => i % step === 0);
+  const tickText = tickLabels.filter((_, i) => i % step === 0);
+
+  const traceT = {
+    x: w.hours, y: w.temps_C,
+    type: 'scatter', mode: 'lines+markers',
+    name: 'T ext. (°C)',
+    line: { color: '#ff9f0a', width: 1.5 }, marker: { size: 3 },
+    hovertemplate: '%{y:.1f} °C<extra>T ext.</extra>',
+  };
+  const traceH = {
+    x: w.hours, y: w.rh_pct,
+    type: 'scatter', mode: 'lines+markers',
+    name: 'Humidité (%)',
+    yaxis: 'y3',
+    line: { color: '#5e5ce6', width: 1.5, dash: 'dot' }, marker: { size: 3 },
+    hovertemplate: '%{y:.0f}%<extra>Humidité</extra>',
+  };
+  const traceV = {
+    x: w.hours, y: w.wind_kmh,
+    type: 'scatter', mode: 'lines+markers',
+    name: 'Vent ambiant (km/h)',
+    yaxis: 'y2',
+    line: { color: '#2997ff', width: 1.5, dash: 'dot' }, marker: { size: 3 },
+    hovertemplate: '%{y:.1f} km/h<extra>Vent ambiant</extra>',
+  };
+  const traceS = {
+    x: w.hours, y: w.truck_speed_kmh,
+    type: 'scatter', mode: 'lines',
+    name: 'Vitesse camion (km/h)',
+    yaxis: 'y2',
+    line: { color: '#30d158', width: 2 },
+    hovertemplate: '%{y:.0f} km/h<extra>Camion</extra>',
+  };
+
+  const wLayout = {
+    paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+    margin: { l: 45, r: 80, t: 10, b: 35 },
+    font: { color: '#86868b', family: '-apple-system,sans-serif', size: 10 },
+    xaxis: {
+      title: { text: 'Heure de départ + h', font: { size: 10 } },
+      tickvals: tickVals, ticktext: tickText,
+      gridcolor: 'rgba(255,255,255,0.04)',
+    },
+    yaxis: {
+      title: { text: '°C', font: { size: 10 }, standoff: 4 },
+      gridcolor: 'rgba(255,255,255,0.04)',
+    },
+    yaxis2: {
+      title: { text: 'km/h', font: { size: 10 }, standoff: 4 },
+      overlaying: 'y', side: 'right',
+      gridcolor: 'rgba(255,255,255,0)', showgrid: false,
+    },
+    yaxis3: {
+      title: { text: '%', font: { size: 10 }, standoff: 4 },
+      overlaying: 'y', side: 'right',
+      anchor: 'free', position: 1.0,
+      range: [0, 100],
+      gridcolor: 'rgba(255,255,255,0)', showgrid: false,
+      tickfont: { color: '#5e5ce6', size: 9 },
+    },
+    hovermode: 'x unified',
+    hoverlabel: {
+      bgcolor: '#1c1c1e',
+      bordercolor: 'rgba(255,255,255,0.12)',
+      font: { color: '#e6edf3', size: 11, family: '-apple-system,sans-serif' },
+    },
+    legend: { bgcolor: 'rgba(0,0,0,0)', font: { color: '#e6edf3', size: 9 },
+              orientation: 'h', x: 0, y: -0.25 },
+  };
+
+  Plotly.react('plotly-weather', [traceT, traceH, traceV, traceS], wLayout, { responsive: true, displaylogo: false, displayModeBar: false, scrollZoom: false });
+}
+
+// ── Alert ─────────────────────────────────────────────────────────────────────
+function showAlert(msg) {
+  const el = document.getElementById('alertError');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function clearAlert() {
+  const el = document.getElementById('alertError');
+  el.textContent = '';
+  el.style.display = 'none';
+}
+
+// ── Animated canvas background ────────────────────────────────────────────────
+function initBackground() {
+  const canvas = document.getElementById('bg');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let W, H;
+
+  function resize() {
+    W = canvas.width  = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // Orbs: normalized positions, RGB, radius, velocity
+  const orbs = [
+    { x: 0.18, y: 0.28, r: 0.60, rgb: [12,  86, 178],  vx:  0.00022, vy:  0.00015 },
+    { x: 0.82, y: 0.62, r: 0.54, rgb: [68,  48, 198],  vx: -0.00018, vy:  0.00023 },
+    { x: 0.54, y: 0.84, r: 0.45, rgb: [0,   76, 108],  vx:  0.00014, vy: -0.00020 },
+    { x: 0.74, y: 0.11, r: 0.38, rgb: [14, 118,  88],  vx: -0.00026, vy:  0.00010 },
+    { x: 0.07, y: 0.72, r: 0.32, rgb: [84,  38, 168],  vx:  0.00019, vy: -0.00024 },
+  ];
+
+  let scrollY = 0;
+  window.addEventListener('scroll', () => { scrollY = window.scrollY; }, { passive: true });
+
+  function frame(ts) {
+    ctx.fillStyle = '#050510';
+    ctx.fillRect(0, 0, W, H);
+
+    const scrollProg = Math.min(1, scrollY / Math.max(1, window.innerHeight));
+
+    orbs.forEach((o, i) => {
+      // Sinusoidal drift + base velocity
+      o.x += o.vx + Math.sin(ts * 0.00038 + i * 1.3) * 0.000075;
+      o.y += o.vy + Math.cos(ts * 0.00031 + i * 0.9) * 0.000075;
+
+      // Soft bounce at edges
+      if (o.x < -0.14) { o.x = -0.14; o.vx =  Math.abs(o.vx); }
+      if (o.x >  1.14) { o.x =  1.14; o.vx = -Math.abs(o.vx); }
+      if (o.y < -0.14) { o.y = -0.14; o.vy =  Math.abs(o.vy); }
+      if (o.y >  1.14) { o.y =  1.14; o.vy = -Math.abs(o.vy); }
+
+      // Orbs drift upward on scroll, giving a parallax-like shift
+      const px  = o.x * W;
+      const py  = (o.y - scrollProg * 0.22) * H;
+      const rad = o.r * Math.min(W, H) * 0.76;
+
+      // Slightly reduce opacity as user scrolls into the app
+      const alpha = 0.175 - scrollProg * 0.04;
+
+      const [r, g, b] = o.rgb;
+      const grad = ctx.createRadialGradient(px, py, 0, px, py, rad);
+      grad.addColorStop(0,    `rgba(${r},${g},${b},${alpha})`);
+      grad.addColorStop(0.42, `rgba(${r},${g},${b},${alpha * 0.28})`);
+      grad.addColorStop(1,    'rgba(0,0,0,0)');
+
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(px, py, rad, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+}
+
+// ── Enter app (unlock scroll + scroll to app panel) ───────────────────────────
+function enterApp() {
+  document.body.classList.remove('locked');
+  requestAnimationFrame(() => {
+    document.getElementById('appScreen').scrollIntoView({ behavior: 'smooth' });
+    // Leaflet needs invalidateSize when its container becomes truly visible
+    setTimeout(() => { if (map) map.invalidateSize(); }, 700);
+  });
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  initBackground();
+  initMap();
+  setupCitySearch('city_depart', 'sug_depart', onFromSelected);
+  setupCitySearch('city_arrivee', 'sug_arrivee', onToSelected);
+  setLang('fr');
+  updateBreedNote();
+});

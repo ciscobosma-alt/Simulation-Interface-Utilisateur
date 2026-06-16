@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SiteSphere — Transport Bovin</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="locked">
+
+<!-- Canvas background (fixed, z-index 0) -->
+<canvas id="bg"></canvas>
+
+<!-- Nav -->
+<nav>
+  <a href="/" class="nav-logo">SiteSphere</a>
+  <div class="lang-toggle">
+    <button class="lang-btn active" onclick="setLang('fr')">FR</button>
+    <button class="lang-btn" onclick="setLang('en')">EN</button>
+  </div>
+</nav>
+
+<!-- ══════════════════════════════════════════════════════
+     SCREEN 1 — Hero (100 vh, scroll verrouillé)
+══════════════════════════════════════════════════════ -->
+<section class="hero-screen" id="heroScreen">
+
+  <p class="hero-eyebrow" data-i18n="hero_eyebrow">Bien-être animal en transport</p>
+
+  <h1 class="hero-title" data-i18n="hero_title">
+    Protégez votre<br>troupeau en transit
+  </h1>
+
+  <p class="hero-sub" data-i18n="hero_sub">
+    Simulez la température de vos bovins pendant le transport routier.<br>
+    En quelques secondes, sachez si votre chargement est en sécurité.
+  </p>
+
+  <div class="hero-cta">
+    <button class="btn-primary" onclick="enterApp()" data-i18n="hero_cta">
+      Simuler le trajet →
+    </button>
+  </div>
+
+  <div class="hero-scroll-hint">↓</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════
+     SCREEN 2 — App (two panels)
+══════════════════════════════════════════════════════ -->
+<section class="app-screen" id="appScreen">
+
+  <!-- ── LEFT PANEL ─────────────────────────────────── -->
+  <div class="left-panel" id="leftPanel">
+    <div class="panel-inner">
+
+      <div class="panel-brand">
+        <span class="panel-brand-name">SiteSphere</span>
+        <span class="panel-brand-tag">Transport</span>
+      </div>
+
+      <!-- 01 Animaux -->
+      <div class="p-section">
+        <div class="p-section-hd">
+          <div class="p-step">01</div>
+          <h3 class="p-section-title" data-i18n="s1_title">Vos animaux</h3>
+        </div>
+
+        <div class="p-grid">
+          <div class="p-group p-col2">
+            <label class="p-label" data-i18n="race_label">Race</label>
+            <input type="hidden" id="race" value="holstein">
+            <div class="custom-select" id="raceSelect">
+              <div class="custom-select-trigger" onclick="toggleRaceDropdown()">
+                <span id="race_display">Holstein-Friesian</span>
+                <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+                  <path d="M2 5l5 5 5-5" stroke="currentColor" stroke-width="1.5"
+                        stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <div class="custom-select-options" id="race_options">
+                {% for key, breed in breeds.items() %}
+                <div class="custom-option{% if key == 'holstein' %} selected{% endif %}"
+                     data-value="{{ key }}"
+                     onclick="selectRace('{{ key }}', '{{ breed.fr }}')">{{ breed.fr }}</div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+
+          <div class="p-group">
+            <label class="p-label" data-i18n="n_bovins_label">Animaux</label>
+            <input class="p-input" type="number" id="n_bovins" value="10" min="1" max="200">
+          </div>
+          <div class="p-group">
+            <label class="p-label" data-i18n="poids_label">Poids (kg)</label>
+            <input class="p-input" type="number" id="poids" value="350" min="80" max="900">
+          </div>
+        </div>
+        <p id="breed_note" style="font-size:0.72rem;color:#86868b;margin-top:6px"></p>
+
+      </div>
+
+      <div class="p-divider"></div>
+
+      <!-- 02 Itinéraire -->
+      <div class="p-section">
+        <div class="p-section-hd">
+          <div class="p-step">02</div>
+          <h3 class="p-section-title" data-i18n="s2_title">Itinéraire</h3>
+        </div>
+
+        <div class="wp-builder">
+          <div class="wp-row">
+            <div class="wp-aside">
+              <div class="wp-dot wp-dot--depart"></div>
+              <div class="wp-line"></div>
+            </div>
+            <div class="wp-content">
+              <label class="p-label" data-i18n="depart_label">Départ</label>
+              <div class="city-search-wrapper">
+                <input class="p-input" type="text" id="city_depart" placeholder="Paris" autocomplete="off">
+                <div class="suggestions" id="sug_depart"></div>
+              </div>
+            </div>
+          </div>
+
+          <div id="stops_container"></div>
+
+          <div class="wp-add-row">
+            <div class="wp-aside"><div class="wp-add-line"></div></div>
+            <button class="btn-add-stop" type="button" onclick="addStop()">
+              <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
+                <path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <span data-i18n="add_stop">Ajouter une étape</span>
+            </button>
+          </div>
+
+          <div class="wp-row">
+            <div class="wp-aside">
+              <div class="wp-dot wp-dot--arrive"></div>
+            </div>
+            <div class="wp-content">
+              <label class="p-label" data-i18n="arrivee_label">Arrivée</label>
+              <div class="city-search-wrapper">
+                <input class="p-input" type="text" id="city_arrivee" placeholder="Lyon" autocomplete="off">
+                <div class="suggestions" id="sug_arrivee"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="p-grid" style="margin-top:12px">
+          <div class="p-group">
+            <label class="p-label" data-i18n="date_depart_label">Date</label>
+            <input class="p-input" type="date" id="date_depart" value="{{ today }}">
+          </div>
+          <div class="p-group">
+            <label class="p-label" data-i18n="heure_depart_label">Heure</label>
+            <input class="p-input" type="time" id="heure_depart" value="08:00">
+          </div>
+        </div>
+      </div>
+
+      <!-- CTA step 1 → 2 -->
+      <div class="p-cta">
+        <div class="alert-error" id="alertError"></div>
+        <button class="btn-continue" id="btnContinue" onclick="wizardContinue()">
+          Choisir la stratégie →
+        </button>
+      </div>
+
+    </div><!-- /panel-inner -->
+  </div><!-- /left-panel -->
+
+  <!-- ── RIGHT PANEL ────────────────────────────────── -->
+  <div class="right-panel" id="rightPanel">
+
+    <!-- Map card -->
+    <div class="map-card">
+      <div id="map"></div>
+      <div class="route-meta" id="route_meta" style="display:none">
+        <div class="route-meta-item">
+          <span data-i18n="distance">Distance</span>
+          <strong id="route_dist">—</strong>
+        </div>
+        <div class="route-meta-item">
+          <span data-i18n="duree_route">Durée estimée</span>
+          <strong id="route_dur">—</strong>
+        </div>
+        <div class="route-meta-item">
+          <span data-i18n="vitesse">Vitesse moy.</span>
+          <strong>80 km/h</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- Results (hidden until simulation) -->
+    <div id="results" style="display:none;padding:0 24px 24px">
+
+      <div class="risk-banner" id="riskBanner">
+        <div class="risk-dot"></div>
+        <div class="risk-content">
+          <h2 id="riskTitle"></h2>
+          <p id="riskDesc"></p>
+          <p id="riskExtremes" style="display:none;font-size:0.75rem;color:#636366;margin-top:6px;line-height:1.6"></p>
+        </div>
+        <div class="risk-tmax" id="riskTmax"></div>
+      </div>
+
+      <div class="event-log-card" id="eventLogCard" style="display:none"></div>
+
+      <div class="graph-card" id="graphCard">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+          <div class="graph-title" style="margin-bottom:0" data-i18n="graph_title">Température interne de l'animal</div>
+          <div id="curve-toggles" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"></div>
+        </div>
+        <div id="plotly-main" style="height:320px"></div>
+      </div>
+
+      <div class="weather-card" id="weatherCard">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <div class="graph-title" style="margin-bottom:0" data-i18n="weather_title">Conditions météo</div>
+          <span id="weatherSourcePill" style="font-size:0.72rem;padding:3px 10px;border-radius:20px;
+            background:rgba(41,151,255,0.15);color:#2997ff;border:1px solid rgba(41,151,255,0.3);display:none"></span>
+        </div>
+        <div class="weather-stats">
+          <div class="weather-stat">
+            <div class="label" data-i18n="temp_ext">Temp. ext.</div>
+            <div class="value" id="wStatTemp">—</div>
+          </div>
+          <div class="weather-stat">
+            <div class="label" data-i18n="humidity">Humidité</div>
+            <div class="value" id="wStatRH">—</div>
+          </div>
+          <div class="weather-stat">
+            <div class="label" data-i18n="wind">Vent</div>
+            <div class="value" id="wStatVent">—</div>
+          </div>
+        </div>
+        <div id="plotly-weather" style="height:240px"></div>
+      </div>
+
+    </div><!-- /results -->
+
+  </div><!-- /right-panel -->
+
+</section>
+
+<!-- ══════════════════════════════════════════════════════
+     WIZARD OVERLAY — Step 2: Strategy selection
+══════════════════════════════════════════════════════ -->
+<div class="wiz-overlay" id="wizOverlay">
+
+  <!-- Background wordmark -->
+  <div class="wiz-bg-mark" aria-hidden="true">SiteSphere</div>
+
+  <!-- Top bar -->
+  <div class="wiz-topbar">
+    <button class="wiz-back" onclick="wizardBack()">
+      <svg width="9" height="14" viewBox="0 0 9 14" fill="none">
+        <path d="M7.5 1L1.5 7l6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Retour
+    </button>
+    <div class="wiz-stepdots">
+      <div class="wiz-sdot done"></div>
+      <div class="wiz-sline"></div>
+      <div class="wiz-sdot current"></div>
+      <div class="wiz-sline"></div>
+      <div class="wiz-sdot"></div>
+    </div>
+    <div style="width:80px"></div>
+  </div>
+
+  <!-- Body -->
+  <div class="wiz-body">
+    <h2 class="wiz-title">Stratégie thermique</h2>
+    <p class="wiz-sub">Sélectionnez les niveaux d'intervention activés pour ce trajet.</p>
+
+    <!-- Regime cards -->
+    <div class="regime-grid">
+
+      <!-- Card 1 — Fenêtres fermées (toujours actif) -->
+      <div class="r-card">
+        <div class="r-check chk-base">✓</div>
+        <svg class="r-icon" viewBox="0 0 68 68" fill="none">
+          <rect x="9" y="22" width="50" height="28" rx="5" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.22)" stroke-width="1.5"/>
+          <rect x="16" y="28" width="36" height="16" rx="2.5" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.13)" stroke-width="1"/>
+          <line x1="34" y1="28" x2="34" y2="44" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+          <circle cx="24" cy="54" r="3.5" fill="rgba(255,255,255,0.18)"/>
+          <circle cx="44" cy="54" r="3.5" fill="rgba(255,255,255,0.18)"/>
+        </svg>
+        <span class="r-badge r-badge-base">Base</span>
+        <div class="r-title">Fenêtres fermées</div>
+        <div class="r-desc">Convection naturelle. Référence thermique pour tout trajet — toujours calculée.</div>
+      </div>
+
+      <!-- Card 2 — Stratégie adaptative (toggle) -->
+      <div class="r-card clickable" id="cardAdaptive" onclick="toggleAdaptiveCard()">
+        <div class="r-check" id="chkAdaptive"></div>
+        <svg class="r-icon" viewBox="0 0 68 68" fill="none">
+          <rect x="9" y="22" width="50" height="28" rx="5" fill="rgba(255,214,10,0.05)" stroke="rgba(255,214,10,0.28)" stroke-width="1.5"/>
+          <line x1="9" y1="30" x2="9" y2="42" stroke="rgba(255,214,10,0.45)" stroke-width="2.5" stroke-dasharray="3 2.5" stroke-linecap="round"/>
+          <line x1="59" y1="30" x2="59" y2="42" stroke="rgba(255,214,10,0.45)" stroke-width="2.5" stroke-dasharray="3 2.5" stroke-linecap="round"/>
+          <path d="M3 36h7M3 36l3-2.5M3 36l3 2.5" stroke="rgba(255,214,10,0.7)" stroke-width="1.4" stroke-linecap="round"/>
+          <path d="M65 36h-7M65 36l-3-2.5M65 36l-3 2.5" stroke="rgba(255,214,10,0.7)" stroke-width="1.4" stroke-linecap="round"/>
+          <circle cx="34" cy="36" r="7" fill="rgba(255,214,10,0.12)" stroke="rgba(255,214,10,0.4)" stroke-width="1.2"/>
+          <path d="M31 36l2 2 4-4" stroke="rgba(255,214,10,0.9)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="24" cy="54" r="3.5" fill="rgba(255,255,255,0.14)"/>
+          <circle cx="44" cy="54" r="3.5" fill="rgba(255,255,255,0.14)"/>
+        </svg>
+        <span class="r-badge r-badge-opt">Optionnel</span>
+        <div class="r-title">Stratégie adaptative</div>
+        <div class="r-desc">Ouverture automatique des fenêtres dès que la température dépasse le seuil de confort.</div>
+      </div>
+
+      <!-- Card 3 — Brumisation (toggle, dim when adaptive off) -->
+      <div class="r-card clickable r-dim" id="cardMist" onclick="toggleMistingCard()">
+        <div class="r-check" id="chkMist"></div>
+        <svg class="r-icon" viewBox="0 0 68 68" fill="none">
+          <rect x="20" y="13" width="16" height="22" rx="3.5" fill="rgba(41,151,255,0.1)" stroke="rgba(41,151,255,0.32)" stroke-width="1.4"/>
+          <path d="M36 22h9a2 2 0 012 2v2a2 2 0 01-2 2h-9" fill="rgba(41,151,255,0.18)" stroke="rgba(41,151,255,0.4)" stroke-width="1.2"/>
+          <!-- spray drops -->
+          <ellipse cx="48" cy="35" rx="2.2" ry="3.2" fill="rgba(41,151,255,0.65)"/>
+          <ellipse cx="54" cy="33" rx="1.8" ry="2.8" fill="rgba(41,151,255,0.5)"/>
+          <ellipse cx="52" cy="41" rx="1.8" ry="2.6" fill="rgba(41,151,255,0.45)"/>
+          <ellipse cx="46" cy="42" rx="1.5" ry="2.2" fill="rgba(41,151,255,0.38)"/>
+          <ellipse cx="57" cy="40" rx="1.4" ry="2" fill="rgba(41,151,255,0.3)"/>
+          <ellipse cx="44" cy="48" rx="1.2" ry="1.8" fill="rgba(41,151,255,0.25)"/>
+          <circle cx="24" cy="54" r="3.5" fill="rgba(255,255,255,0.14)"/>
+          <circle cx="44" cy="54" r="3.5" fill="rgba(255,255,255,0.14)"/>
+        </svg>
+        <span class="r-badge r-badge-urg">Urgence</span>
+        <div class="r-title">Brumisation</div>
+        <div class="r-desc">Aspersion d'eau (0,05 L/min/animal) si les fenêtres ne suffisent pas. Durée optimale calculée automatiquement.</div>
+      </div>
+
+    </div><!-- /regime-grid -->
+
+    <!-- Reservoir (visible only when misting on) -->
+    <div class="wiz-res res-hidden" id="wizRes">
+      <div class="wiz-res-title">
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+          <path d="M6.5 1C6.5 1 2 5.5 2 8a4.5 4.5 0 009 0C11 5.5 6.5 1 6.5 1z" stroke="currentColor" stroke-width="1.3"/>
+        </svg>
+        Réservoir embarqué
+      </div>
+      <div class="res-pills" id="resPills">
+        <button class="res-pill" onclick="setReservoir(5)">5 L</button>
+        <button class="res-pill rp-on" onclick="setReservoir(10)">10 L</button>
+        <button class="res-pill" onclick="setReservoir(20)">20 L</button>
+        <button class="res-pill" onclick="setReservoir(50)">50 L</button>
+        <button class="res-pill" onclick="setReservoir(null)">Illimité</button>
+      </div>
+    </div>
+
+    <!-- Cas extrêmes -->
+    <div class="wiz-extras">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span class="p-label" style="color:#86868b">Afficher cas extrêmes</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="casExtremesEnabled" onchange="onCasExtremesWizToggle()">
+          <span class="toggle-knob"></span>
+        </label>
+      </div>
+      <div class="wiz-extras-body" id="extremeBodyWiz">
+        <div class="p-grid" style="margin-top:13px">
+          <div class="p-group">
+            <label class="p-label">Écart chaud (%)</label>
+            <input class="p-input" type="number" id="pct_chaud" value="20" min="1" max="50">
+          </div>
+          <div class="p-group">
+            <label class="p-label">Écart froid (%)</label>
+            <input class="p-input" type="number" id="pct_froid" value="20" min="1" max="50">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Simulate CTA -->
+    <div class="wiz-cta-wrap">
+      <div class="alert-error" id="alertErrorWiz" style="display:none;width:100%;text-align:center;margin-bottom:4px"></div>
+      <button class="btn-simulate-wiz" id="btnSimulateWiz" onclick="runSimulation()">
+        <div class="spinner"></div>
+        <span class="btn-label">Simuler le trajet</span>
+      </button>
+    </div>
+
+  </div><!-- /wiz-body -->
+</div><!-- /wiz-overlay -->
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
