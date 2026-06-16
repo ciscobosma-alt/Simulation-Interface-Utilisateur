@@ -367,6 +367,7 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
     T_CLOSE_WIN       = 38.5   # °C  refermer fenêtres
     T_EMERGENCY_CLOSE = 37.5   # °C  fermeture d'urgence (hypothermie)
     HIGH_SPEED        = 70.0   # km/h  autoroute
+    T_EXT_HOT         = 36.0   # °C  au-dessus : convection insuffisante même avec vent
     WIND_MIST_KMH     = 50.0   # km/h  en dessous : brumisation plus efficace que fenêtres
     REGIME_COOLDOWN_H = 0.5    # h   min 30 min entre changements de régime
     MIST_PRE_MIN      = 10.0   # min  durée de stress avant action
@@ -525,7 +526,14 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
                 regime_events.append({"t_h": round(t, 4), "mode": "ouvert",
                                        "reason": "Fin brumisation — refroidissement maintenu"})
 
-            # 2. Fenêtres ouvertes + stress persistant + vent faible → brumisation
+            # 2a. Chaleur extrême : T_ext ≥ 36°C → convection inefficace même avec vent fort
+            elif (mode == "ouvert" and T_cur >= T_RED_ZONE and Tinf >= T_EXT_HOT
+                  and t_discomfort >= MIST_PRE_MIN and can_mist and cooldown_ok):
+                _do_trigger_misting(
+                    f"T ext élevée ({Tinf:.1f}°C) — convection insuffisante (T={T_cur:.1f}°C)")
+                last_change_h = t
+
+            # 2b. Vent faible : fenêtres ouvertes mais insuffisantes
             elif (mode == "ouvert" and t_discomfort >= MIST_PRE_MIN
                   and low_wind and can_mist and cooldown_ok):
                 _do_trigger_misting(

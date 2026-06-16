@@ -126,7 +126,8 @@ function setLang(lang) {
 
 // ── Map ──────────────────────────────────────────────────────────────────────
 let map, routeLine = null;
-const mapMarkers = [];
+const mapMarkers  = [];
+const timeMarkers = [];
 
 function initMap() {
   map = L.map('map', { zoomControl: true, scrollWheelZoom: true }).setView([46.5, 2.3], 6);
@@ -403,6 +404,7 @@ async function calcRoute() {
     if (routeLine) routeLine.remove();
     routeLine = L.polyline(routeCoords.map(([ln, lt]) => [lt, ln]), { color: '#2997ff', weight: 3, opacity: 0.85 }).addTo(map);
     map.fitBounds(routeLine.getBounds(), { padding: [20, 20] });
+    buildTimeMarkers();
 
   } catch {
     routeCoords = null; routeSpeedsKmh = null; routeStops = [];
@@ -420,6 +422,56 @@ async function calcRoute() {
     routeLine = L.polyline([[fromCoord.lat, fromCoord.lon],[toCoord.lat, toCoord.lon]],
       { color: '#2997ff', weight: 2, dashArray: '6 4', opacity: 0.7 }).addTo(map);
     map.fitBounds(routeLine.getBounds(), { padding: [20, 20] });
+    buildTimeMarkers();
+  }
+}
+
+// ── Time markers on route ────────────────────────────────────────────────────
+function buildTimeMarkers() {
+  timeMarkers.forEach(m => m.remove()); timeMarkers.length = 0;
+  if (!routeCoords || routeCoords.length < 2 || routeDurationH < 2) return;
+
+  const totalStopH = (routeStops || []).reduce((s, st) => s + (st.duration_h || 0), 0);
+  const drivingH   = Math.max(0.01, routeDurationH - totalStopH);
+
+  // Cumulative distance along routeCoords
+  const cumDist = [0];
+  for (let i = 1; i < routeCoords.length; i++) {
+    const [ln1, lt1] = routeCoords[i - 1], [ln2, lt2] = routeCoords[i];
+    const R = 6371, dLat = (lt2 - lt1) * Math.PI / 180, dLon = (ln2 - ln1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lt1*Math.PI/180)*Math.cos(lt2*Math.PI/180)*Math.sin(dLon/2)**2;
+    cumDist.push(cumDist[i - 1] + R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+  }
+  const totalDist = cumDist[cumDist.length - 1];
+
+  // Departure hour from form
+  const deptStr  = (document.getElementById('heure_depart')?.value || '08:00').split(':');
+  const deptHour = parseInt(deptStr[0]) + parseInt(deptStr[1] || 0) / 60;
+
+  for (let t = 2; t < routeDurationH; t += 2) {
+    // Driving time elapsed at total-time t (subtract stops that occurred before t)
+    let stopsBefore = 0;
+    for (const st of (routeStops || [])) {
+      if (st.t_arrive_h < t) stopsBefore += Math.min(st.duration_h, t - st.t_arrive_h);
+    }
+    const drivElapsed = Math.min(drivingH, t - stopsBefore);
+    const fraction    = drivElapsed / drivingH;
+    const targetDist  = fraction * totalDist;
+
+    let idx = cumDist.findIndex(d => d >= targetDist);
+    if (idx < 0) idx = routeCoords.length - 1;
+    const [lon, lat] = routeCoords[idx];
+
+    const clockH = Math.floor((deptHour + t) % 24);
+    const clockM = Math.round(((deptHour + t) % 1) * 60);
+    const clock  = `${String(clockH).padStart(2,'0')}:${String(clockM).padStart(2,'0')}`;
+
+    const icon = L.divIcon({
+      className: '',
+      html: `<div class="route-time-dot"><span class="rtd-label">+${t}h</span><span class="rtd-clock">${clock}</span></div>`,
+      iconAnchor: [0, 8],
+    });
+    timeMarkers.push(L.marker([lat, lon], { icon, interactive: false }).addTo(map));
   }
 }
 

@@ -1138,3 +1138,24 @@ input[type="range"]::-moz-range-thumb {
   .regime-grid { grid-template-columns: 1fr; }
   .wiz-body { padding: 36px 18px 70px; }
 }
+
+/* ── Route time markers ── */
+.route-time-dot {
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 1px; pointer-events: none;
+}
+.route-time-dot::before {
+  content: ''; display: block; width: 8px; height: 8px;
+  background: rgba(255,255,255,0.85); border: 1.5px solid rgba(41,151,255,0.9);
+  border-radius: 50%; margin-bottom: 2px;
+}
+.rtd-label {
+  font: 600 10px/1 system-ui, sans-serif;
+  color: #fff; background: rgba(10,10,20,0.72);
+  padding: 1px 4px; border-radius: 4px; white-space: nowrap;
+}
+.rtd-clock {
+  font: 400 9px/1 system-ui, sans-serif;
+  color: rgba(255,255,255,0.6); background: rgba(10,10,20,0.55);
+  padding: 1px 4px; border-radius: 4px; white-space: nowrap;
+}
