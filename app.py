@@ -5,11 +5,33 @@ import numpy as np
 import requests as req_lib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, date
-from flask import Flask, render_template, request, jsonify
+import base64
+from flask import Flask, render_template, request, jsonify, Response
 from simulation import (run_simulation_core, h_convection_forcee_sphere_W_m2K,
                         mdot_evap_max_kg_s, H_FG, rk4_step, appliquer_cas_extreme)
 
 app = Flask(__name__)
+
+APP_PASSWORD = os.environ.get("APP_PASSWORD")
+
+@app.before_request
+def require_auth():
+    if not APP_PASSWORD:
+        return  # pas de mot de passe configuré → accès libre
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Basic "):
+        try:
+            decoded = base64.b64decode(auth[6:]).decode("utf-8")
+            _, pwd = decoded.split(":", 1)
+            if pwd == APP_PASSWORD:
+                return  # mot de passe correct
+        except Exception:
+            pass
+    return Response(
+        "Accès protégé — SiteSphere Transport",
+        401,
+        {"WWW-Authenticate": 'Basic realm="SiteSphere Transport"'},
+    )
 
 # Session HTTP partagée avec connection pooling pour Open-Meteo
 _http = req_lib.Session()
