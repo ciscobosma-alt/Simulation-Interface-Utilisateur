@@ -63,7 +63,11 @@ const STRINGS = {
     extreme_cases:    "Cas extrêmes",
     adaptive_label:   "Adaptatif",
     closed_label:     "Fermé",
-    adaptive_not_needed_msg: "✓ Stratégie adaptative non requise — fenêtres fermées suffisantes sur ce trajet.",
+    adaptive_not_needed_msg: "✓ Fenêtres fermées suffisantes — aucune ouverture ni brumisation nécessaire.",
+    windows_only_msg:        "✓ Ouverture des fenêtres suffisante — aucune brumisation nécessaire.",
+    misting_needed_msg:      "⚠ Brumisation nécessaire —",
+    misting_interventions:   "intervention(s) sur ce trajet —",
+    misting_water_used:      "L d'eau utilisés.",
     water_reserve_label: "Réserve eau brumisation",
     water_used_of:    "utilisés",
     water_remaining:  "restants après le trajet",
@@ -141,7 +145,11 @@ const STRINGS = {
     extreme_cases:    "Extreme cases",
     adaptive_label:   "Adaptive",
     closed_label:     "Closed",
-    adaptive_not_needed_msg: "✓ Adaptive strategy not required — windows closed is sufficient for this trip.",
+    adaptive_not_needed_msg: "✓ Windows closed sufficient — no opening or misting required.",
+    windows_only_msg:        "✓ Window opening sufficient — no misting required.",
+    misting_needed_msg:      "⚠ Misting required —",
+    misting_interventions:   "intervention(s) on this trip —",
+    misting_water_used:      "L of water used.",
     water_reserve_label: "Misting water reserve",
     water_used_of:    "used",
     water_remaining:  "remaining after trip",
@@ -704,9 +712,10 @@ function buildCurveToggles(traces) {
   _allTraces = traces;
   _traceVis  = {};
 
-  // When adaptive mode is active, hide "windows closed" by default — only show adaptive curve
+  // Default visibility: hide open-windows + ext-temp; also hide closed-windows when adaptive
+  // BUT if adaptive_not_needed, closed-windows IS the answer → keep it visible
   const HIDDEN_BY_DEFAULT = new Set([t('mode_ouvert'), t('t_ext_label')]);
-  if (wizAdaptive) {
+  if (wizAdaptive && !lastSimData?.adaptive_not_needed) {
     HIDDEN_BY_DEFAULT.add(t('mode_ferme'));
   }
 
@@ -862,15 +871,24 @@ function renderResults(data) {
     }
   }
 
-  // Adaptive not needed note
+  // Adaptive strategy note — explain what level of intervention is actually needed
   const adaptNoteEl = document.getElementById('adaptiveNotNeeded');
-  if (adaptNoteEl) {
+  if (adaptNoteEl && adaptive) {
+    const mistingCount = (adaptive.misting_events || []).length;
     if (data.adaptive_not_needed) {
       adaptNoteEl.textContent = t('adaptive_not_needed_msg');
-      adaptNoteEl.style.display = '';
+      adaptNoteEl.style.color = '#30d158';
+    } else if (mistingCount === 0) {
+      adaptNoteEl.textContent = t('windows_only_msg');
+      adaptNoteEl.style.color = '#30d158';
     } else {
-      adaptNoteEl.style.display = 'none';
+      const wUsed = adaptive.water_used_L != null ? ` ${adaptive.water_used_L.toFixed(1)} ${t('misting_water_used')}` : '';
+      adaptNoteEl.textContent = `${t('misting_needed_msg')} ${mistingCount} ${t('misting_interventions')}${wUsed}`;
+      adaptNoteEl.style.color = '#ff9f0a';
     }
+    adaptNoteEl.style.display = '';
+  } else if (adaptNoteEl) {
+    adaptNoteEl.style.display = 'none';
   }
 
   setTimeout(() => {
