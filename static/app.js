@@ -717,12 +717,19 @@ function buildCurveToggles(traces) {
   const HIDDEN_BY_DEFAULT = new Set([t('mode_ouvert'), t('t_ext_label')]);
   if (wizAdaptive && !lastSimData?.adaptive_not_needed) {
     HIDDEN_BY_DEFAULT.add(t('mode_ferme'));
+    // Hide "Fermé" extreme cases — the fair comparison is Adaptive vs Adaptive extremes
+    HIDDEN_BY_DEFAULT.add(`${t('closed_label')} — ${t('extreme_hot')}`);
+    HIDDEN_BY_DEFAULT.add(`${t('closed_label')} — ${t('extreme_cold')}`);
   }
 
   // Overlay traces (showlegend:false) inherit their parent curve's visibility
   const TRANSP_PARENT = {
-    'Transpiration':             t('mode_ferme'),
-    'Transpiration (adaptatif)': t('adaptive_strategy'),
+    '_grad_ferme':         t('mode_ferme'),
+    '_grad_adaptive':      t('adaptive_strategy'),
+    '_grad_ferme_chaud':   `${t('closed_label')} — ${t('extreme_hot')}`,
+    '_grad_ferme_froid':   `${t('closed_label')} — ${t('extreme_cold')}`,
+    '_grad_adap_chaud':    `${t('adaptive_label')} — ${t('extreme_hot')}`,
+    '_grad_adap_froid':    `${t('adaptive_label')} — ${t('extreme_cold')}`,
   };
   traces.forEach(tr => {
     if (tr.showlegend === false) {
@@ -761,12 +768,16 @@ function buildCurveToggles(traces) {
 
 function toggleCurve(name, visible) {
   _traceVis[name] = visible;
-  // Sync transpiration overlays to their parent curve
-  if (name === t('mode_ferme')) {
-    _traceVis['Transpiration'] = visible;
-  } else if (name === t('adaptive_strategy')) {
-    _traceVis['Transpiration (adaptatif)'] = visible;
-  }
+  // Sync gradient overlays to their parent curve
+  const OVERLAY_CHILDREN = {
+    [t('mode_ferme')]:                                  ['_grad_ferme'],
+    [t('adaptive_strategy')]:                           ['_grad_adaptive'],
+    [`${t('closed_label')} — ${t('extreme_hot')}`]:    ['_grad_ferme_chaud'],
+    [`${t('closed_label')} — ${t('extreme_cold')}`]:   ['_grad_ferme_froid'],
+    [`${t('adaptive_label')} — ${t('extreme_hot')}`]:  ['_grad_adap_chaud'],
+    [`${t('adaptive_label')} — ${t('extreme_cold')}`]: ['_grad_adap_froid'],
+  };
+  (OVERLAY_CHILDREN[name] || []).forEach(child => { _traceVis[child] = visible; });
   const active = _allTraces.filter(tr => _traceVis[tr.name]);
   const gd = document.getElementById('plotly-main');
   Plotly.react(gd, active, gd.layout, { responsive: true, displaylogo: false, displayModeBar: false });
@@ -827,6 +838,25 @@ function renderEventLog(adaptive) {
 }
 
 // ── Render results ────────────────────────────────────────────────────────────
+function makeTranspGradientTrace(tArr, TArr, transpScale, name) {
+  const colors = TArr.map(T => {
+    const f = (1 / (1 + Math.exp(-8 * (T - 39.5)))) * transpScale;
+    if (f < 0.02) return 'rgba(0,0,0,0)';
+    const norm = Math.min(1, (f - 0.02) / 0.98);
+    const g = Math.round(159 * (1 - norm));
+    const a = (0.2 + 0.75 * norm).toFixed(2);
+    return `rgba(255,${g},0,${a})`;
+  });
+  return {
+    type: 'scatter', x: tArr, y: TArr,
+    mode: 'markers',
+    marker: { color: colors, size: 5, opacity: 1 },
+    showlegend: false,
+    hoverinfo: 'skip',
+    name,
+  };
+}
+
 function renderResults(data) {
   lastSimData = data;
   const section = document.getElementById('results');
@@ -915,26 +945,7 @@ function renderResults(data) {
     hovertemplate: '%{y:.2f} °C<extra>Fermé</extra>',
   });
 
-  // Transpiration overlay (fermé) — une seule trace avec null comme séparateur de segments
-  // → une seule entrée Plotly, showlegend:false fiable, pas d'"undefined" dans la légende
-  if (data.ferme_timeline) {
-    const transpSegs = data.ferme_timeline.filter(s => s.label && s.label.includes('Transpiration'));
-    const tX = [], tY = [];
-    transpSegs.forEach((seg, idx) => {
-      if (idx > 0) { tX.push(null); tY.push(null); }
-      for (let i = 0; i < ferme.t_h.length; i++) {
-        if (ferme.t_h[i] >= seg.t_debut_h - 0.01 && ferme.t_h[i] <= seg.t_fin_h + 0.01) {
-          tX.push(ferme.t_h[i]); tY.push(ferme.T_C[i]);
-        }
-      }
-    });
-    if (tX.length) {
-      traces.push({ x: tX, y: tY, type: 'scatter', mode: 'lines',
-        name: 'Transpiration', showlegend: false,
-        line: { color: '#ff9f0a', width: 3 },
-        hovertemplate: '%{y:.2f} °C<extra>Transpiration</extra>' });
-    }
-  }
+  traces.push(makeTranspGradientTrace(ferme.t_h, ferme.T_C, 1.0, '_grad_ferme'));
 
   if (ouvert) {
     traces.push({
@@ -955,33 +966,7 @@ function renderResults(data) {
       hovertemplate: '%{y:.2f} °C<extra>' + t('adaptive_label') + '</extra>',
     });
 
-    // Transpiration overlay (adaptatif) — même approche : une seule trace avec null gaps
-    if (adaptive.series.transpiring) {
-      const transpArr = adaptive.series.transpiring;
-      const tArr = adaptive.series.t_h;
-      const TArr = adaptive.series.T_C;
-      const aX = [], aY = [];
-      let inT = false;
-      for (let i = 0; i < transpArr.length; i++) {
-        if (transpArr[i]) {
-          if (!inT) {
-            if (aX.length) { aX.push(null); aY.push(null); }
-            if (i > 0) { aX.push(tArr[i-1]); aY.push(TArr[i-1]); }
-            inT = true;
-          }
-          aX.push(tArr[i]); aY.push(TArr[i]);
-        } else if (inT) {
-          aX.push(tArr[i]); aY.push(TArr[i]);
-          inT = false;
-        }
-      }
-      if (aX.length) {
-        traces.push({ x: aX, y: aY, type: 'scatter', mode: 'lines',
-          name: 'Transpiration (adaptatif)', showlegend: false,
-          line: { color: '#ff9f0a', width: 3.5 },
-          hovertemplate: '%{y:.2f} °C<extra>Transpiration (adaptatif)</extra>' });
-      }
-    }
+    traces.push(makeTranspGradientTrace(adaptive.series.t_h, adaptive.series.T_C, 1.0, '_grad_adaptive'));
   }
 
   // ── Cas extrêmes — enveloppe chaud/froid (tracés en pointillés, moins saturés) ──
@@ -993,6 +978,7 @@ function renderResults(data) {
       line: { color: risk === 'ok' ? 'rgba(48,209,88,0.45)' : 'rgba(255,69,58,0.45)', width: 1, dash: 'dot' },
       hovertemplate: '%{y:.2f} °C<extra>' + t('closed_label') + ' ' + t('extreme_hot') + '</extra>',
     });
+    traces.push(makeTranspGradientTrace(data.ferme_chaud.t_h, data.ferme_chaud.T_C, 0.1, '_grad_ferme_chaud'));
   }
   if (data.ferme_froid) {
     traces.push({
@@ -1002,6 +988,7 @@ function renderResults(data) {
       line: { color: risk === 'ok' ? 'rgba(48,209,88,0.25)' : 'rgba(255,69,58,0.25)', width: 1, dash: 'dot' },
       hovertemplate: '%{y:.2f} °C<extra>' + t('closed_label') + ' ' + t('extreme_cold') + '</extra>',
     });
+    traces.push(makeTranspGradientTrace(data.ferme_froid.t_h, data.ferme_froid.T_C, 0.1, '_grad_ferme_froid'));
   }
   if (data.adaptive_chaud && adaptive) {
     traces.push({
@@ -1011,6 +998,7 @@ function renderResults(data) {
       line: { color: 'rgba(255,214,10,0.45)', width: 1.5, dash: 'dot' },
       hovertemplate: '%{y:.2f} °C<extra>' + t('adaptive_label') + ' ' + t('extreme_hot') + '</extra>',
     });
+    traces.push(makeTranspGradientTrace(data.adaptive_chaud.t_h, data.adaptive_chaud.T_C, 0.1, '_grad_adap_chaud'));
   }
   if (data.adaptive_froid && adaptive) {
     traces.push({
@@ -1020,6 +1008,7 @@ function renderResults(data) {
       line: { color: 'rgba(255,214,10,0.25)', width: 1.5, dash: 'dot' },
       hovertemplate: '%{y:.2f} °C<extra>' + t('adaptive_label') + ' ' + t('extreme_cold') + '</extra>',
     });
+    traces.push(makeTranspGradientTrace(data.adaptive_froid.t_h, data.adaptive_froid.T_C, 0.1, '_grad_adap_froid'));
   }
 
   // ── Température extérieure (axe Y secondaire, droite) ────────────────────────
