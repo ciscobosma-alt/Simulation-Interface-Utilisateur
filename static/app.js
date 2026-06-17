@@ -54,6 +54,33 @@ const STRINGS = {
     sim_error:        "Erreur de simulation.",
     computing:        "Calcul en cours…",
     t_max_label:      "T max",
+    unlimited:        "Illimité",
+    timeline_title:   "Chronologie des interventions",
+    misting_label:    "Brumisation",
+    misting_event:    "min — déclenchée à T=",
+    extreme_hot:      "cas chaud",
+    extreme_cold:     "cas froid",
+    extreme_cases:    "Cas extrêmes",
+    adaptive_label:   "Adaptatif",
+    closed_label:     "Fermé",
+    adaptive_not_needed_msg: "✓ Stratégie adaptative non requise — fenêtres fermées suffisantes sur ce trajet.",
+    water_reserve_label: "Réserve eau brumisation",
+    water_used_of:    "utilisés",
+    water_remaining:  "restants après le trajet",
+    water_shortage:   "⚠ Eau insuffisante — il manquait",
+    water_shortage_suf: "pour assurer le refroidissement sur l'ensemble du trajet.",
+    water_ok:         "✓ Réservoir suffisant —",
+    water_ok_suf:     "restants à l'arrivée.",
+    water_used_unlimited: "Eau de brumisation utilisée :",
+    water_tank_title: "Niveau du réservoir au cours du trajet",
+    axis_time:        "Temps (h)",
+    axis_temp_animal: "T animale (°C)",
+    axis_temp_ext:    "T ext. (°C)",
+    axis_limit:       "Limite",
+    axis_normal:      "Normale",
+    stop_chart:       "Arrêt",
+    adaptive_strategy: "Stratégie adaptative",
+    t_ext_label:      "T extérieure",
   },
   en: {
     hero_eyebrow:     "Animal welfare in transport",
@@ -105,12 +132,41 @@ const STRINGS = {
     sim_error:        "Simulation error.",
     computing:        "Computing…",
     t_max_label:      "T max",
+    unlimited:        "Unlimited",
+    timeline_title:   "Intervention timeline",
+    misting_label:    "Misting",
+    misting_event:    "min — triggered at T=",
+    extreme_hot:      "hot case",
+    extreme_cold:     "cold case",
+    extreme_cases:    "Extreme cases",
+    adaptive_label:   "Adaptive",
+    closed_label:     "Closed",
+    adaptive_not_needed_msg: "✓ Adaptive strategy not required — windows closed is sufficient for this trip.",
+    water_reserve_label: "Misting water reserve",
+    water_used_of:    "used",
+    water_remaining:  "remaining after trip",
+    water_shortage:   "⚠ Insufficient water — missing",
+    water_shortage_suf: "to ensure cooling throughout the trip.",
+    water_ok:         "✓ Tank sufficient —",
+    water_ok_suf:     "remaining on arrival.",
+    water_used_unlimited: "Misting water used:",
+    water_tank_title: "Tank level during the trip",
+    axis_time:        "Time (h)",
+    axis_temp_animal: "Animal temp (°C)",
+    axis_temp_ext:    "Ext. temp (°C)",
+    axis_limit:       "Limit",
+    axis_normal:      "Normal",
+    stop_chart:       "Stop",
+    adaptive_strategy: "Adaptive strategy",
+    t_ext_label:      "Ext. temp.",
   }
 };
 
 let currentLang = 'fr';
 
 function t(key) { return STRINGS[currentLang][key] || key; }
+
+let lastSimData = null;
 
 function setLang(lang) {
   currentLang = lang;
@@ -122,19 +178,46 @@ function setLang(lang) {
     el.textContent = t(key);
   });
   document.documentElement.lang = lang;
+  updateBreedNote();
+  if (lastSimData) renderResults(lastSimData);
 }
 
+// ── Theme ────────────────────────────────────────────────────────────────────
+let currentTheme = localStorage.getItem('sitesphere-theme') || 'dark';
+
+function applyTheme(theme) {
+  currentTheme = theme;
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('sitesphere-theme', theme);
+  const btn = document.getElementById('themeToggleBtn');
+  if (btn) btn.textContent = theme === 'dark' ? '☀' : '🌙';
+  setMapTiles(theme);
+}
+
+function toggleTheme() { applyTheme(currentTheme === 'dark' ? 'light' : 'dark'); }
+
 // ── Map ──────────────────────────────────────────────────────────────────────
-let map, routeLine = null;
+let map, mapTileLayer = null, routeLine = null;
 const mapMarkers  = [];
 const timeMarkers = [];
 
-function initMap() {
-  map = L.map('map', { zoomControl: true, scrollWheelZoom: true }).setView([46.5, 2.3], 6);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+const MAP_TILES = {
+  dark:  'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+};
+
+function setMapTiles(theme) {
+  if (!map) return;
+  if (mapTileLayer) { map.removeLayer(mapTileLayer); }
+  mapTileLayer = L.tileLayer(MAP_TILES[theme] || MAP_TILES.dark, {
     attribution: '© OpenStreetMap © CARTO',
     subdomains: 'abcd', maxZoom: 19
   }).addTo(map);
+}
+
+function initMap() {
+  map = L.map('map', { zoomControl: true, scrollWheelZoom: true }).setView([46.5, 2.3], 6);
+  setMapTiles(currentTheme);
 }
 
 function makeMarkerIcon(color, glow) {
@@ -272,7 +355,7 @@ let wizMisting   = false;   // misting available (only relevant when adaptive on
 let wizReservoir = 10;      // liters (null = unlimited)
 
 function wizardContinue() {
-  if (!fromCoord || !toCoord) { showAlert('Veuillez sélectionner une ville de départ et d\'arrivée.'); return; }
+  if (!fromCoord || !toCoord) { showAlert(t('no_route')); return; }
   clearAlert();
   document.getElementById('wizOverlay').classList.add('open');
   // Scroll overlay to top in case it was scrolled before
@@ -320,7 +403,8 @@ function _applyMistingState() {
 function setReservoir(val) {
   wizReservoir = val;
   document.querySelectorAll('.res-pill').forEach(btn => {
-    const btnVal = btn.textContent === 'Illimité' ? null : parseInt(btn.textContent);
+    const rv = btn.dataset.rv;
+    const btnVal = rv === 'unlimited' ? null : parseInt(rv);
     btn.classList.toggle('rp-on', btnVal === val);
   });
 }
@@ -519,6 +603,7 @@ async function runSimulation() {
   btn.classList.add('loading');
   btn.disabled = true;
   btn.querySelector('.btn-label').textContent = t('computing');
+  startSimAnimation();
 
   try {
     const timeVal       = document.getElementById('heure_depart').value || '08:00';
@@ -554,13 +639,15 @@ async function runSimulation() {
     });
     const data = await res.json();
 
-    if (!data.ok) { showWizAlert(data.error || t('sim_error')); return; }
+    if (!data.ok) { stopSimAnimation(); showWizAlert(data.error || t('sim_error')); return; }
 
     // Close wizard, show results
+    stopSimAnimation();
     document.getElementById('wizOverlay').classList.remove('open');
     renderResults(data);
 
   } catch (e) {
+    stopSimAnimation();
     showWizAlert(e.message);
   } finally {
     btn.classList.remove('loading');
@@ -613,19 +700,20 @@ function classifyRisk(tMax) {
 let _allTraces   = [];   // full trace list, set after each simulation
 let _traceVis    = {};   // { traceName: bool }
 
-// Curves hidden by default (user must opt-in to see them)
-const HIDDEN_BY_DEFAULT = new Set([
-  'Fenêtres ouvertes', 'Windows open', 'T extérieure',
-]);
-
 function buildCurveToggles(traces) {
   _allTraces = traces;
   _traceVis  = {};
 
+  // When adaptive mode is active, hide "windows closed" by default — only show adaptive curve
+  const HIDDEN_BY_DEFAULT = new Set([t('mode_ouvert'), t('t_ext_label')]);
+  if (wizAdaptive) {
+    HIDDEN_BY_DEFAULT.add(t('mode_ferme'));
+  }
+
   // Overlay traces (showlegend:false) inherit their parent curve's visibility
   const TRANSP_PARENT = {
-    'Transpiration':             currentLang === 'fr' ? 'Fenêtres fermées' : 'Windows closed',
-    'Transpiration (adaptatif)': 'Stratégie adaptative',
+    'Transpiration':             t('mode_ferme'),
+    'Transpiration (adaptatif)': t('adaptive_strategy'),
   };
   traces.forEach(tr => {
     if (tr.showlegend === false) {
@@ -637,12 +725,10 @@ function buildCurveToggles(traces) {
   });
 
   const COLOR_MAP = {
-    'Fenêtres fermées':      '#ff453a',
-    'Windows closed':        '#ff453a',
-    'Fenêtres ouvertes':     '#2997ff',
-    'Windows open':          '#2997ff',
-    'Stratégie adaptative':  '#ffd60a',
-    'T extérieure':          'rgba(90,200,250,0.8)',
+    [t('mode_ferme')]:          '#ff453a',
+    [t('mode_ouvert')]:         '#2997ff',
+    [t('adaptive_strategy')]:   '#ffd60a',
+    [t('t_ext_label')]:         'rgba(90,200,250,0.8)',
   };
 
   // Only show toggle buttons for named legend traces (exclude showlegend:false overlays)
@@ -667,9 +753,9 @@ function buildCurveToggles(traces) {
 function toggleCurve(name, visible) {
   _traceVis[name] = visible;
   // Sync transpiration overlays to their parent curve
-  if (name === 'Fenêtres fermées' || name === 'Windows closed') {
+  if (name === t('mode_ferme')) {
     _traceVis['Transpiration'] = visible;
-  } else if (name === 'Stratégie adaptative') {
+  } else if (name === t('adaptive_strategy')) {
     _traceVis['Transpiration (adaptatif)'] = visible;
   }
   const active = _allTraces.filter(tr => _traceVis[tr.name]);
@@ -700,7 +786,7 @@ function renderEventLog(adaptive) {
   card.style.display = '';
 
   const DOT_COLOR  = { ferme: '#86868b', ouvert: '#ff9f0a', brumisation: '#2997ff' };
-  const MODE_LABEL = { ferme: 'Fenêtres fermées', ouvert: 'Fenêtres ouvertes', brumisation: 'Brumisation' };
+  const MODE_LABEL = { ferme: t('mode_ferme'), ouvert: t('mode_ouvert'), brumisation: t('misting_label') };
 
   // Merge regime changes + misting details
   const items = [
@@ -708,7 +794,7 @@ function renderEventLog(adaptive) {
     ...(adaptive.misting_events || []).map(e => ({
       t_h: e.t_start_h, kind: 'misting',
       mode: 'brumisation',
-      text: `Brumisation ${Math.round((e.t_end_h - e.t_start_h) * 60)} min — déclenchée à T=${e.T_trigger} °C`,
+      text: `${t('misting_label')} ${Math.round((e.t_end_h - e.t_start_h) * 60)} ${t('misting_event')}${e.T_trigger} °C`,
     })),
   ].sort((a, b) => a.t_h - b.t_h);
 
@@ -727,12 +813,13 @@ function renderEventLog(adaptive) {
   }).join('');
 
   card.innerHTML = `
-    <div class="graph-title" style="margin-bottom:14px">Chronologie des interventions</div>
+    <div class="graph-title" style="margin-bottom:14px">${t('timeline_title')}</div>
     <div class="ev-list">${rows}</div>`;
 }
 
 // ── Render results ────────────────────────────────────────────────────────────
 function renderResults(data) {
+  lastSimData = data;
   const section = document.getElementById('results');
   section.style.display = 'block';
 
@@ -752,7 +839,7 @@ function renderResults(data) {
   if (extEl) {
     const chaudSeries = (adaptive && data.adaptive_chaud) ? data.adaptive_chaud : data.ferme_chaud;
     const froidSeries = (adaptive && data.adaptive_froid) ? data.adaptive_froid : data.ferme_froid;
-    const stratLabel  = adaptive ? 'Adaptatif' : 'Fermé';
+    const stratLabel  = adaptive ? t('adaptive_label') : t('closed_label');
 
     if (chaudSeries || froidSeries) {
       const RISK_COLOR = { ok: '#30d158', caution: '#ff9f0a', warning: '#ff9f0a', danger: '#ff453a' };
@@ -761,14 +848,14 @@ function renderResults(data) {
       if (chaudSeries) {
         const tm = Math.max(...chaudSeries.T_C);
         const rk = classifyRisk(tm);
-        parts.push(`cas chaud : <span style="color:${RISK_COLOR[rk]};font-weight:600">${RISK_ICON[rk]} ${tm.toFixed(1)} °C</span>`);
+        parts.push(`${t('extreme_hot')} : <span style="color:${RISK_COLOR[rk]};font-weight:600">${RISK_ICON[rk]} ${tm.toFixed(1)} °C</span>`);
       }
       if (froidSeries) {
         const tm = Math.max(...froidSeries.T_C);
         const rk = classifyRisk(tm);
-        parts.push(`cas froid : <span style="color:${RISK_COLOR[rk]};font-weight:600">${RISK_ICON[rk]} ${tm.toFixed(1)} °C</span>`);
+        parts.push(`${t('extreme_cold')} : <span style="color:${RISK_COLOR[rk]};font-weight:600">${RISK_ICON[rk]} ${tm.toFixed(1)} °C</span>`);
       }
-      extEl.innerHTML = `Cas extrêmes (${stratLabel}) — ${parts.join('  ·  ')}`;
+      extEl.innerHTML = `${t('extreme_cases')} (${stratLabel}) — ${parts.join('  ·  ')}`;
       extEl.style.display = '';
     } else {
       extEl.style.display = 'none';
@@ -779,7 +866,7 @@ function renderResults(data) {
   const adaptNoteEl = document.getElementById('adaptiveNotNeeded');
   if (adaptNoteEl) {
     if (data.adaptive_not_needed) {
-      adaptNoteEl.textContent = '✓ Stratégie adaptative non requise — fenêtres fermées suffisantes sur ce trajet.';
+      adaptNoteEl.textContent = t('adaptive_not_needed_msg');
       adaptNoteEl.style.display = '';
     } else {
       adaptNoteEl.style.display = 'none';
@@ -845,9 +932,9 @@ function renderResults(data) {
     traces.push({
       x: adaptive.series.t_h, y: adaptive.series.T_C,
       type: 'scatter', mode: 'lines',
-      name: 'Stratégie adaptative',
+      name: t('adaptive_strategy'),
       line: { color: colorAdaptive, width: 2.5 },
-      hovertemplate: '%{y:.2f} °C<extra>Adaptatif</extra>',
+      hovertemplate: '%{y:.2f} °C<extra>' + t('adaptive_label') + '</extra>',
     });
 
     // Transpiration overlay (adaptatif) — même approche : une seule trace avec null gaps
@@ -884,36 +971,36 @@ function renderResults(data) {
     traces.push({
       x: data.ferme_chaud.t_h, y: data.ferme_chaud.T_C,
       type: 'scatter', mode: 'lines',
-      name: 'Fermé — cas chaud',
+      name: `${t('closed_label')} — ${t('extreme_hot')}`,
       line: { color: risk === 'ok' ? 'rgba(48,209,88,0.45)' : 'rgba(255,69,58,0.45)', width: 1, dash: 'dot' },
-      hovertemplate: '%{y:.2f} °C<extra>Fermé chaud</extra>',
+      hovertemplate: '%{y:.2f} °C<extra>' + t('closed_label') + ' ' + t('extreme_hot') + '</extra>',
     });
   }
   if (data.ferme_froid) {
     traces.push({
       x: data.ferme_froid.t_h, y: data.ferme_froid.T_C,
       type: 'scatter', mode: 'lines',
-      name: 'Fermé — cas froid',
+      name: `${t('closed_label')} — ${t('extreme_cold')}`,
       line: { color: risk === 'ok' ? 'rgba(48,209,88,0.25)' : 'rgba(255,69,58,0.25)', width: 1, dash: 'dot' },
-      hovertemplate: '%{y:.2f} °C<extra>Fermé froid</extra>',
+      hovertemplate: '%{y:.2f} °C<extra>' + t('closed_label') + ' ' + t('extreme_cold') + '</extra>',
     });
   }
   if (data.adaptive_chaud && adaptive) {
     traces.push({
       x: data.adaptive_chaud.t_h, y: data.adaptive_chaud.T_C,
       type: 'scatter', mode: 'lines',
-      name: 'Adaptatif — cas chaud',
+      name: `${t('adaptive_label')} — ${t('extreme_hot')}`,
       line: { color: 'rgba(255,214,10,0.45)', width: 1.5, dash: 'dot' },
-      hovertemplate: '%{y:.2f} °C<extra>Adaptatif chaud</extra>',
+      hovertemplate: '%{y:.2f} °C<extra>' + t('adaptive_label') + ' ' + t('extreme_hot') + '</extra>',
     });
   }
   if (data.adaptive_froid && adaptive) {
     traces.push({
       x: data.adaptive_froid.t_h, y: data.adaptive_froid.T_C,
       type: 'scatter', mode: 'lines',
-      name: 'Adaptatif — cas froid',
+      name: `${t('adaptive_label')} — ${t('extreme_cold')}`,
       line: { color: 'rgba(255,214,10,0.25)', width: 1.5, dash: 'dot' },
-      hovertemplate: '%{y:.2f} °C<extra>Adaptatif froid</extra>',
+      hovertemplate: '%{y:.2f} °C<extra>' + t('adaptive_label') + ' ' + t('extreme_cold') + '</extra>',
     });
   }
 
@@ -922,7 +1009,7 @@ function renderResults(data) {
   traces.push({
     x: wData.hours, y: wData.temps_C,
     type: 'scatter', mode: 'lines',
-    name: 'T extérieure',
+    name: t('t_ext_label'),
     yaxis: 'y2',
     line: { color: 'rgba(90,200,250,0.55)', width: 1.5, dash: 'dashdot' },
     hovertemplate: '%{y:.1f} °C<extra>T ext.</extra>',
@@ -937,15 +1024,15 @@ function renderResults(data) {
     margin: { l: 50, r: 70, t: 16, b: 40 },
     font: { color: '#86868b', family: '-apple-system,sans-serif', size: 11 },
     xaxis: {
-      title: { text: 'Temps (h)', font: { size: 11 } },
+      title: { text: t('axis_time'), font: { size: 11 } },
       gridcolor: 'rgba(255,255,255,0.05)', tickcolor: 'rgba(255,255,255,0.1)',
     },
     yaxis: {
-      title: { text: 'T animale (°C)', font: { size: 11 } },
+      title: { text: t('axis_temp_animal'), font: { size: 11 } },
       gridcolor: 'rgba(255,255,255,0.05)', tickcolor: 'rgba(255,255,255,0.1)',
     },
     yaxis2: {
-      title: { text: 'T ext. (°C)', font: { size: 10, color: 'rgba(90,200,250,0.7)' } },
+      title: { text: t('axis_temp_ext'), font: { size: 10, color: 'rgba(90,200,250,0.7)' } },
       overlaying: 'y', side: 'right',
       gridcolor: 'transparent', tickcolor: 'rgba(255,255,255,0.06)',
       tickfont: { color: 'rgba(90,200,250,0.6)', size: 10 },
@@ -973,12 +1060,12 @@ function renderResults(data) {
       })),
     ],
     annotations: [
-      { xref: 'paper', yref: 'y', x: 1.01, y: 39.5, text: 'Limite', showarrow: false, font: { color: 'rgba(255,69,58,0.7)', size: 10 } },
-      { xref: 'paper', yref: 'y', x: 1.01, y: 38.5, text: 'Normale', showarrow: false, font: { color: 'rgba(48,209,88,0.7)', size: 10 } },
+      { xref: 'paper', yref: 'y', x: 1.01, y: 39.5, text: t('axis_limit'), showarrow: false, font: { color: 'rgba(255,69,58,0.7)', size: 10 } },
+      { xref: 'paper', yref: 'y', x: 1.01, y: 38.5, text: t('axis_normal'), showarrow: false, font: { color: 'rgba(48,209,88,0.7)', size: 10 } },
       ...(data.stops || []).map(s => ({
         xref: 'x', yref: 'paper',
         x: (s.t_arrive_h + s.t_depart_h) / 2, y: 0.97,
-        text: `Arrêt ${s.duration_h}h`, showarrow: false,
+        text: `${t('stop_chart')} ${s.duration_h}h`, showarrow: false,
         font: { color: 'rgba(255,255,255,0.35)', size: 9 },
       })),
     ],
@@ -1009,14 +1096,14 @@ function renderResults(data) {
     card.id = 'waterCard';
     card.style.cssText = 'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:14px 18px;margin-top:12px';
     card.innerHTML = `
-      <div style="font-size:0.78rem;color:#86868b;margin-bottom:8px">Réserve eau brumisation</div>
+      <div style="font-size:0.78rem;color:#86868b;margin-bottom:8px">${t('water_reserve_label')}</div>
       <div style="display:flex;align-items:center;gap:14px">
         <div style="flex:1;background:rgba(255,255,255,0.06);border-radius:4px;height:6px;overflow:hidden">
           <div style="width:${pct}%;height:100%;background:${barColor};border-radius:4px;transition:width .4s"></div>
         </div>
-        <div style="font-size:0.82rem;color:#e6edf3;white-space:nowrap">${wUsed} / ${wAvail} L utilisés</div>
+        <div style="font-size:0.82rem;color:#e6edf3;white-space:nowrap">${wUsed} / ${wAvail} L ${t('water_used_of')}</div>
       </div>
-      <div style="font-size:0.72rem;color:#86868b;margin-top:6px">${wLeft} L restants après le trajet</div>`;
+      <div style="font-size:0.72rem;color:#86868b;margin-top:6px">${wLeft} L ${t('water_remaining')}</div>`;
     document.getElementById('graphCard').insertAdjacentElement('afterend', card);
   }
 
@@ -1045,17 +1132,17 @@ function renderResults(data) {
 
     const msgHtml = isShortage
       ? `<div style="padding:10px 14px;border-radius:10px;background:rgba(255,69,58,0.1);border:1px solid rgba(255,69,58,0.22);color:#ff453a;font-size:0.82rem;font-weight:500;margin-bottom:10px">
-           ⚠ Eau insuffisante — il manquait <strong>${shortfall} L</strong> pour assurer le refroidissement sur l'ensemble du trajet.
+           ${t('water_shortage')} <strong>${shortfall} L</strong> ${t('water_shortage_suf')}
          </div>`
       : `<div style="padding:10px 14px;border-radius:10px;background:rgba(48,209,88,0.07);border:1px solid rgba(48,209,88,0.18);color:#30d158;font-size:0.82rem;font-weight:500;margin-bottom:10px">
-           ✓ Réservoir suffisant — <strong>${remaining} L</strong> restants à l'arrivée.
+           ${t('water_ok')} <strong>${remaining} L</strong> ${t('water_ok_suf')}
          </div>`;
 
     const wcc = document.createElement('div');
     wcc.id = 'waterChartCard';
     wcc.style.cssText = 'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:14px 18px;margin-top:12px';
     wcc.innerHTML = `
-      <div style="font-size:0.78rem;color:#86868b;margin-bottom:10px">Niveau du réservoir au cours du trajet</div>
+      <div style="font-size:0.78rem;color:#86868b;margin-bottom:10px">${t('water_tank_title')}</div>
       ${msgHtml}
       <div id="plotly-reservoir" style="height:160px"></div>`;
 
@@ -1076,7 +1163,7 @@ function renderResults(data) {
         paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
         margin: { l: 46, r: 16, t: 4, b: 34 },
         font: { color: '#86868b', family: '-apple-system,sans-serif', size: 10 },
-        xaxis: { title: { text: 'Temps (h)', font: { size: 10 } },
+        xaxis: { title: { text: t('axis_time'), font: { size: 10 } },
                  gridcolor: 'rgba(255,255,255,0.05)', tickcolor: 'rgba(255,255,255,0.08)' },
         yaxis: { title: { text: 'L', font: { size: 10 } }, rangemode: 'nonnegative',
                  gridcolor: 'rgba(255,255,255,0.05)', tickcolor: 'rgba(255,255,255,0.08)' },
@@ -1089,6 +1176,18 @@ function renderResults(data) {
       },
       { responsive: true, displaylogo: false, displayModeBar: false }
     );
+  }
+
+  // Eau illimitée : afficher uniquement la quantité totale utilisée
+  const prevUnlimCard = document.getElementById('waterUnlimitedCard');
+  if (prevUnlimCard) prevUnlimCard.remove();
+  if (adaptive && adaptive.available_water_L === null && adaptive.water_used_L > 0) {
+    const card = document.createElement('div');
+    card.id = 'waterUnlimitedCard';
+    card.style.cssText = 'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:12px 18px;margin-top:12px;font-size:0.82rem;color:#86868b';
+    card.innerHTML = `${t('water_used_unlimited')} <strong style="color:#e6edf3">${adaptive.water_used_L.toFixed(1)} L</strong>`;
+    const anchor = document.getElementById('graphCard');
+    if (anchor) anchor.insertAdjacentElement('afterend', card);
   }
 
   // Event log
@@ -1116,7 +1215,7 @@ function renderResults(data) {
   const pill = document.getElementById('weatherSourcePill');
   if (pill) {
     pill.style.display = '';
-    pill.textContent   = w.source === 'open-meteo' ? 'Open-Meteo (réel)' : 'Données estimées';
+    pill.textContent   = w.source === 'open-meteo' ? `Open-Meteo (${currentLang === 'fr' ? 'réel' : 'live'})` : (currentLang === 'fr' ? 'Données estimées' : 'Estimated data');
     pill.style.color   = w.source === 'open-meteo' ? '#30d158' : '#ff9f0a';
     pill.style.background    = w.source === 'open-meteo' ? 'rgba(48,209,88,0.1)' : 'rgba(255,159,10,0.1)';
     pill.style.borderColor   = w.source === 'open-meteo' ? 'rgba(48,209,88,0.3)' : 'rgba(255,159,10,0.3)';
@@ -1215,6 +1314,173 @@ function clearAlert() {
   el.style.display = 'none';
 }
 
+// ── Simulation loading animation (Mix A+C: orb + circuit lines) ──────────────
+let _simAnimId = null, _simStatusTimer = null;
+
+function startSimAnimation() {
+  const overlay = document.getElementById('simLoading');
+  overlay.classList.add('active');
+
+  const canvas  = document.getElementById('simLoadCanvas');
+  const ctx     = canvas.getContext('2d');
+  const W = canvas.width  = overlay.clientWidth  || window.innerWidth;
+  const H = canvas.height = overlay.clientHeight || window.innerHeight;
+  const cx = W / 2, cy = H / 2;
+
+  // ── Circuit lines (Option C): L-shaped paths from edges → center ──
+  const NCIRCUIT = 18;
+  const circuits = [];
+  for (let i = 0; i < NCIRCUIT; i++) {
+    const side = i % 4;
+    let sx, sy;
+    if      (side === 0) { sx = (0.15 + Math.random() * 0.7) * W; sy = 0; }
+    else if (side === 1) { sx = W;  sy = (0.15 + Math.random() * 0.7) * H; }
+    else if (side === 2) { sx = (0.15 + Math.random() * 0.7) * W; sy = H; }
+    else                 { sx = 0;  sy = (0.15 + Math.random() * 0.7) * H; }
+
+    // L-shaped waypoints: edge → elbow → center
+    const elbow = Math.random() > 0.5
+      ? { x: cx, y: sy }    // horizontal first
+      : { x: sx, y: cy };   // vertical first
+
+    const isGreen  = Math.random() > 0.5;
+    const baseAlpha = 0.35 + Math.random() * 0.3;
+    circuits.push({
+      pts:   [{ x: sx, y: sy }, elbow, { x: cx, y: cy }],
+      prog:  Math.random() * 0.3,           // stagger start
+      speed: 0.0015 + Math.random() * 0.002,
+      color: isGreen ? '#4ADE80' : '#29ADFF',
+      alpha: baseAlpha,
+      width: 0.7 + Math.random() * 0.8,
+      totalLen: 0,
+    });
+    const c = circuits[circuits.length - 1];
+    for (let k = 1; k < c.pts.length; k++) {
+      const dx = c.pts[k].x - c.pts[k-1].x;
+      const dy = c.pts[k].y - c.pts[k-1].y;
+      c.totalLen += Math.sqrt(dx * dx + dy * dy);
+    }
+  }
+
+  // ── Particles: floating data nodes (Option A aesthetic) ──
+  const NPARTS = 55;
+  const parts = Array.from({ length: NPARTS }, () => ({
+    x: Math.random() * W, y: Math.random() * H,
+    vx: (Math.random() - 0.5) * 0.25,
+    vy: -Math.random() * 0.4 - 0.05,
+    r: 1 + Math.random() * 1.5,
+    color: Math.random() > 0.5 ? '#29ADFF' : '#4ADE80',
+    life: Math.random(),
+  }));
+
+  function drawCircuit(c) {
+    const drawLen = c.prog * c.totalLen;
+    let rem = drawLen, started = false;
+    ctx.save();
+    ctx.globalAlpha = c.alpha;
+    ctx.strokeStyle = c.color;
+    ctx.lineWidth   = c.width;
+    ctx.shadowBlur  = 6; ctx.shadowColor = c.color;
+    ctx.beginPath();
+    for (let k = 1; k < c.pts.length; k++) {
+      const p0 = c.pts[k - 1], p1 = c.pts[k];
+      const dx = p1.x - p0.x, dy = p1.y - p0.y;
+      const segLen = Math.sqrt(dx * dx + dy * dy);
+      if (rem <= 0) break;
+      if (!started) { ctx.moveTo(p0.x, p0.y); started = true; }
+      if (rem >= segLen) {
+        ctx.lineTo(p1.x, p1.y); rem -= segLen;
+      } else {
+        const t = rem / segLen;
+        ctx.lineTo(p0.x + dx * t, p0.y + dy * t);
+
+        // Glowing head dot
+        const hx = p0.x + dx * t, hy = p0.y + dy * t;
+        ctx.stroke(); ctx.beginPath();
+        ctx.globalAlpha = 1;
+        ctx.shadowBlur = 14;
+        ctx.arc(hx, hy, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = c.color; ctx.fill();
+        break;
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+    c.prog = Math.min(1, c.prog + c.speed);
+    if (c.prog >= 1) c.prog = 0;   // loop
+  }
+
+  function frame() {
+    _simAnimId = requestAnimationFrame(frame);
+    ctx.clearRect(0, 0, W, H);
+
+    // Faint hex grid
+    ctx.save();
+    ctx.strokeStyle = 'rgba(41,173,255,0.04)';
+    ctx.lineWidth = 0.5;
+    const gs = 48;
+    for (let x = 0; x < W; x += gs) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y < H; y += gs) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+    ctx.restore();
+
+    // Circuit lines converging to center
+    circuits.forEach(drawCircuit);
+
+    // Particle network
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
+      p.x += p.vx; p.y += p.vy; p.life += 0.004;
+      if (p.y < -10 || p.life > 1) {
+        p.x = Math.random() * W; p.y = H + 5; p.life = 0;
+      }
+      const a = Math.sin(p.life * Math.PI) * 0.55;
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.fillStyle = p.color;
+      ctx.shadowBlur = 4; ctx.shadowColor = p.color;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+
+      // Connect nearby particles
+      for (let j = i + 1; j < parts.length; j++) {
+        const q = parts[j];
+        const dx = p.x - q.x, dy = p.y - q.y;
+        const d  = Math.sqrt(dx * dx + dy * dy);
+        if (d < 90) {
+          ctx.save();
+          ctx.globalAlpha = 0.1 * (1 - d / 90);
+          ctx.strokeStyle = '#29ADFF'; ctx.lineWidth = 0.4;
+          ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+          ctx.restore();
+        }
+      }
+    }
+  }
+  frame();
+
+  // Cycling status messages
+  const msgs = [
+    'Récupération météo…',
+    'Calcul thermique RK4…',
+    'Simulation adaptative…',
+    'Analyse des risques…',
+    'Génération du rapport…',
+  ];
+  let mi = 0;
+  const statusEl = document.getElementById('simLoadStatus');
+  _simStatusTimer = setInterval(() => {
+    mi = (mi + 1) % msgs.length;
+    if (statusEl) { statusEl.style.opacity = 0; setTimeout(() => { statusEl.textContent = msgs[mi]; statusEl.style.opacity = 1; }, 200); }
+  }, 1400);
+}
+
+function stopSimAnimation() {
+  if (_simAnimId)      { cancelAnimationFrame(_simAnimId); _simAnimId = null; }
+  if (_simStatusTimer) { clearInterval(_simStatusTimer); _simStatusTimer = null; }
+  const overlay = document.getElementById('simLoading');
+  if (overlay) overlay.classList.remove('active');
+}
+
 // ── Animated canvas background ────────────────────────────────────────────────
 function initBackground() {
   const canvas = document.getElementById('bg');
@@ -1296,6 +1562,7 @@ function enterApp() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  applyTheme(currentTheme);
   initBackground();
   initMap();
   setupCitySearch('city_depart', 'sug_depart', onFromSelected);

@@ -15,9 +15,12 @@
 <!-- Nav -->
 <nav>
   <a href="/" class="nav-logo">SiteSphere</a>
-  <div class="lang-toggle">
-    <button class="lang-btn active" onclick="setLang('fr')">FR</button>
-    <button class="lang-btn" onclick="setLang('en')">EN</button>
+  <div class="nav-actions">
+    <button class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Thème clair / sombre">🌙</button>
+    <div class="lang-toggle">
+      <button class="lang-btn active" onclick="setLang('fr')">FR</button>
+      <button class="lang-btn" onclick="setLang('en')">EN</button>
+    </div>
   </div>
 </nav>
 
@@ -354,11 +357,11 @@
         Réservoir embarqué
       </div>
       <div class="res-pills" id="resPills">
-        <button class="res-pill" onclick="setReservoir(5)">5 L</button>
-        <button class="res-pill rp-on" onclick="setReservoir(10)">10 L</button>
-        <button class="res-pill" onclick="setReservoir(20)">20 L</button>
-        <button class="res-pill" onclick="setReservoir(50)">50 L</button>
-        <button class="res-pill" onclick="setReservoir(null)">Illimité</button>
+        <button class="res-pill" onclick="setReservoir(5)"    data-rv="5">5 L</button>
+        <button class="res-pill rp-on" onclick="setReservoir(10)" data-rv="10">10 L</button>
+        <button class="res-pill" onclick="setReservoir(20)"   data-rv="20">20 L</button>
+        <button class="res-pill" onclick="setReservoir(50)"   data-rv="50">50 L</button>
+        <button class="res-pill" onclick="setReservoir(null)" data-rv="unlimited" data-i18n="unlimited">Illimité</button>
       </div>
     </div>
 
@@ -395,6 +398,25 @@
     </div>
 
   </div><!-- /wiz-body -->
+
+  <!-- ── Loading animation (shown during simulation) ───────────────────── -->
+  <div id="simLoading">
+    <canvas id="simLoadCanvas"></canvas>
+    <div class="sim-load-center">
+      <div class="sim-orb-scene">
+        <div class="sim-orb-ring sim-orb-ring-a"></div>
+        <div class="sim-orb-ring sim-orb-ring-b"></div>
+        <div class="sim-orb-ring sim-orb-ring-c"></div>
+        <div class="sim-orb-core">
+          <div class="sim-orb-pulse"></div>
+        </div>
+      </div>
+      <p class="sim-load-title">Simulation thermique</p>
+      <p class="sim-load-status" id="simLoadStatus">Initialisation…</p>
+      <div class="sim-load-dots"><span></span><span></span><span></span></div>
+    </div>
+  </div>
+
 </div><!-- /wiz-overlay -->
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
