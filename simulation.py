@@ -270,17 +270,20 @@ def rk4_step_vec(y, dt, deriv_func_vec):
 # CAS EXTRÊMES — perturbation du payload nominal
 # ============================================================
 
-def appliquer_cas_extreme(payload: dict, f_masse: float, f_qv: float, f_vent: float) -> dict:
+def appliquer_cas_extreme(payload: dict, f_masse: float, f_qv: float, f_vent: float,
+                          f_transp: float = 0.1) -> dict:
     """Crée un payload perturbé pour simuler un cas extrême (chaud ou froid).
 
     Cas chaud (f > 1) : masse ↑, qv ↑, vent ↓  → plus d'animaux, moins de refroidissement
     Cas froid (f < 1) : masse ↓, qv ↓, vent ↑  → moins d'animaux, plus de refroidissement
     Le vent n'est modifié que pour les régimes avec vent (type ≠ 1).
+    f_transp : fraction du débit de sudation nominal (défaut 0.1 = 10 %).
     """
     p = copy.deepcopy(payload)
 
     p["masse_kg"] = float(p["masse_kg"]) * f_masse
     p["puissance_volumique_W_m3"] = float(p["puissance_volumique_W_m3"]) * f_qv
+    p["mdot_transp_m2_kgs"] = float(p.get("mdot_transp_m2_kgs", 1.5e-5)) * f_transp
 
     new_regs = []
     for r in p.get("regimes", []):
@@ -371,7 +374,13 @@ def run_simulation_core(payload: dict, label_cas: str = "Nominal") -> dict:
 
     # ----- Thermorégulation (optionnelle) -----
     thermoreg_enabled = bool(payload.get("thermoreg_enabled", True))
-    thermoreg_model   = str(payload.get("thermoreg_model", "lineaire"))  # "lineaire" | "empirique"
+    thermoreg_model   = str(payload.get("thermoreg_model", "sigmoide"))  # "sigmoide" | "lineaire" | "empirique"
+
+    # --- Mode sigmoïde (défaut) ---
+    # Sigmoïde unique : Pint passe de Pmax (froid) à Pmin (chaud) via σ(-k*(T-T_sig))
+    # À T_sig et bornes symétriques (Pmin+Pmax=2P0) : Pint(T_sig) = P0 exactement
+    T_sig_C     = float(payload.get("T_sig_C",     38.5))  # °C — inflexion (= T_set physiologique)
+    k_sig_per_C = float(payload.get("k_sig_per_C",  3.0))  # 1/°C — raideur (gain max = (Pmax-Pmin)*k/4)
 
     # --- Mode linéaire ---
     T_set_C  = float(payload.get("T_set_C",  T0))
@@ -409,7 +418,12 @@ def run_simulation_core(payload: dict, label_cas: str = "Nominal") -> dict:
         if not thermoreg_enabled:
             return float(P0_W)
 
-        if thermoreg_model == "empirique":
+        if thermoreg_model == "sigmoide":
+            # Sigmoïde lisse : Pmax (froid) → P0 (T_sig) → Pmin (chaud)
+            P = Pmin_W + (Pmax_W - Pmin_W) / (1.0 + np.exp(k_sig_per_C * (T_C - T_sig_C)))
+            return clamp(P, Pmin_W, Pmax_W)
+
+        elif thermoreg_model == "empirique":
             # Branche froide : linéaire avec k_froid_emp (P augmente si T < T_ref)
             if T_C < T_emp_ref:
                 P = P0_W + k_froid_emp_W_K * (T_emp_ref - T_C)
@@ -423,7 +437,7 @@ def run_simulation_core(payload: dict, label_cas: str = "Nominal") -> dict:
                 P = P_at_haut + k_extrapole_emp_W_K * (T_C - T_emp_haut)
             return clamp(P, Pmin_W, Pmax_W)
 
-        else:  # mode linéaire (défaut)
+        else:  # mode linéaire
             cold = k_c_W_K * max(0.0, (T_set_C - Delta_C) - T_C)
             hot  = k_h_W_K * max(0.0, T_C - (T_set_C + Delta_C))
             return clamp(P0_W + cold - hot, Pmin_W, Pmax_W)
@@ -490,6 +504,12 @@ def run_simulation_core(payload: dict, label_cas: str = "Nominal") -> dict:
                     seg["evap_duree_h"] = float(max(evap_duree_h, 0.0))
                     seg["Pevap_reg3"] = float(mdot_max * H_FG)
 
+    # ----- Transpiration sigmoïdale (paramètres) -----
+    T_TRANSP_MID    = float(payload.get("T_transp_mid_C",    39.5))   # °C — inflexion
+    K_TRANSP        = float(payload.get("k_transp_per_C",     8.0))   # 1/°C — raideur
+    mdot_transp_m2  = float(payload.get("mdot_transp_m2_kgs", 1.5e-5)) # kg/m²/s au plateau
+    mdot_transp_max = mdot_transp_m2 * S                               # kg/s total pour l'animal
+
     # ----- Intégration -----
     t_s = np.linspace(0.0, t_fin_h * 3600.0, n_points)
     dt = float(t_s[1] - t_s[0])
@@ -497,8 +517,6 @@ def run_simulation_core(payload: dict, label_cas: str = "Nominal") -> dict:
 
     T = np.empty_like(t_s)
     T[0] = T0
-
-    transpiring = False
 
     # ----- Air camion (régime sans vent + hermétique) -----
     T_air = None
@@ -561,14 +579,11 @@ def run_simulation_core(payload: dict, label_cas: str = "Nominal") -> dict:
                 evap_active_reg3 = True
                 Pevap_reg3 = seg["Pevap_reg3"]
 
-        # transpiration autorisée uniquement hors évap active
-        if evap_active_reg3:
-            transpiring = False
-        else:
-            if (not transpiring) and (T[i-1] > T_max) and (mdot_in_kg_s > 0):
-                transpiring = True
-            if transpiring and (T[i-1] <= T0 or mdot_in_kg_s <= 0):
-                transpiring = False
+        # Sigmoïde de sudation : ~0 à T_set, 50 % à T_TRANSP_MID (39.5°C), plateau au-delà
+        transp_factor = (
+            0.0 if evap_active_reg3
+            else 1.0 / (1.0 + np.exp(-K_TRANSP * (T[i-1] - T_TRANSP_MID)))
+        )
 
         # Vent pour transfert de masse pendant transpiration
         vent_evap = vent_reg if seg["type"] != 1 else vent_ambiant_kmh
@@ -578,22 +593,17 @@ def run_simulation_core(payload: dict, label_cas: str = "Nominal") -> dict:
             Pevap_total = Pevap_reg3
             mdot_evap = Pevap_total / H_FG if H_FG > 0 else 0.0
             label = f"{label_cas} | Évaporation (régime 3)"
-        elif transpiring:
-            mdot_max = mdot_evap_max_kg_s(r, vent_evap, Tinf, RH)
-            mdot_evap = min(mdot_in_kg_s, mdot_max)
-            Pevap_total = mdot_evap * H_FG
-            label = f"{label_cas} | Transpiration"
         else:
-            Pevap_total = 0.0
-            mdot_evap = 0.0
-            if seg["type"] == 1:
+            mdot_max = mdot_evap_max_kg_s(r, vent_evap, Tinf, RH)
+            mdot_evap = min(mdot_transp_max * transp_factor, mdot_max)
+            Pevap_total = mdot_evap * H_FG
+            if transp_factor > 0.05:
+                label = f"{label_cas} | Transpiration"
+            elif seg["type"] == 1:
                 label = f"{label_cas} | Sans vent (hermétique)" if herm else f"{label_cas} | Sans vent"
             elif seg["type"] == 2:
                 label = f"{label_cas} | Vent sans évap"
             else:
-                # ===========================
-                # MODIF 2 : label non ambigu
-                # ===========================
                 label = f"{label_cas} | Vent (post-mouillage)"
 
         # ODE (sphère seule ou système couplé air-camion)

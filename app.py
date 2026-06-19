@@ -353,14 +353,12 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
     P0_W  = qv * V_m3
     Pmin  = P0_W * 0.60
     Pmax  = P0_W * 1.40
-    T_set = 38.5; Delta = 0.2; k_h = 500.0
+    T_SIG_THERMOREG = 38.5   # °C — inflexion sigmoïde thermoreg
+    K_SIG_THERMOREG = 3.0    # 1/°C — raideur
 
     def Pint(T_C):
-        # Hot side: reduce metabolism when T > T_set + Delta (sweating)
-        hot  = k_h * max(0.0, T_C - (T_set + Delta))
-        # Cold side: increase metabolism when T < T_set - Delta (shivering)
-        cold = k_h * max(0.0, (T_set - Delta) - T_C)
-        return float(np.clip(P0_W - hot + cold, Pmin, Pmax))
+        P = Pmin + (Pmax - Pmin) / (1.0 + math.exp(K_SIG_THERMOREG * (T_C - T_SIG_THERMOREG)))
+        return float(max(Pmin, min(Pmax, P)))
 
     T_DISCOMFORT      = 39.0   # °C  stress thermique → ouverture fenêtres
     T_RED_ZONE        = 39.5   # °C  zone critique
@@ -376,15 +374,17 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
     N_SUB           = 90
     DT_S            = STEP_MIN * 60.0 / N_SUB   # 10 s
     STEP_S          = STEP_MIN * 60.0            # 900 s
-    MIST_KG_S       = 0.05 / 60.0               # spray kg/s
-    MDOT_TRANSP_KGS = 0.0002                     # transpiration kg/s
+    MIST_KG_S          = 0.05 / 60.0    # spray kg/s
+    MDOT_TRANSP_M2_KGS = 1.5e-5         # kg/m²/s — débit max sudation (Bos taurus ~54 g/m²/h)
+    T_TRANSP_MID       = 39.5           # °C — centre sigmoïde (zone rouge)
+    K_TRANSP           = 8.0            # 1/°C — raideur
 
     mode          = "ferme"
     t_discomfort  = 0.0
     t_red         = 0.0
     misting_end_h = -1.0
     water_on_skin = 0.0   # kg of spray water remaining on animal (not yet evaporated)
-    transpiring   = False # natural sweating active (mirrors run_simulation_core logic)
+    transp_factor = 0.0   # débit de sudation : 0 à T_set, 1 à T_RED_ZONE (linéaire)
     water_used_L      = 0.0   # total water consumed across all misting events (liters)
     water_shortfall_L = 0.0   # water that would have been needed but wasn't available
 
@@ -477,7 +477,7 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
             T_t = float(T_cur)
             for s in range(N_SUB):
                 T_t = rk4_step(T_t, DT_S, fb(sP if s < n else pp_v))
-            if _sim_residual(T_t, w_end_) <= T_set:
+            if _sim_residual(T_t, w_end_) <= T_DISCOMFORT:
                 opt_s = n * DT_S; T_end = T_t; w_end = w_end_
                 break
 
@@ -488,7 +488,7 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
                 w_f = w_p + net_b * N_SUB * DT_S; T_f = T_p
                 for _ in range(N_SUB):
                     T_f = rk4_step(T_f, DT_S, fb(sP))
-                if _sim_residual(T_f, w_f) <= T_set:
+                if _sim_residual(T_f, w_f) <= T_DISCOMFORT:
                     opt_s = (extra + 2) * STEP_MIN * 60.0; T_end = T_f; w_end = w_f
                     break
                 T_p, w_p = T_f, w_f
@@ -636,7 +636,7 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
                                                        f"(T={T_cur:.1f}°C, vent {vent_percu:.0f} km/h)")})
 
             # 4. Pré-refroidissement avant autoroute (seulement si T_ext assez chaud)
-            elif (mode == "ferme" and T_cur > T_set + 0.1
+            elif (mode == "ferme" and T_cur > T_CLOSE_WIN + 0.1
                   and not is_highway and highway_ahead and cooldown_ok
                   and not must_close):
                 mode = "ouvert"
@@ -662,15 +662,11 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
         is_misting = misting_end_h > 0 and t < misting_end_h - 1e-9
         active     = "brumisation" if is_misting else mode
 
-        # ── Transpiration naturelle (sudation) — mirrors run_simulation_core ──
-        # Activée quand T > T_RED_ZONE (39.5°C), désactivée quand T revient à T_set (38.5°C)
-        # Désactivée en mode brumisation (le spray fournit l'eau)
+        # ── Sudation sigmoïdale : ~0 à T_set, 50 % à T_TRANSP_MID (39.5°C) ──
         if active == "brumisation":
-            transpiring = False
-        elif T_cur > T_RED_ZONE:
-            transpiring = True
-        elif T_cur <= T_set:
-            transpiring = False
+            transp_factor = 0.0
+        else:
+            transp_factor = 1.0 / (1.0 + math.exp(-K_TRANSP * (T_cur - T_TRANSP_MID)))
 
         # ── Airspeed and h_convection ─────────────────────────────────
         if active == "brumisation":
@@ -709,7 +705,7 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
         elif active == "ouvert":
             spray_P = 0.0; n_spray = 0
             # Transpiration naturelle (sudation biologique)
-            transpi_P = min(MDOT_TRANSP_KGS, mdot_mx) * H_FG if transpiring else 0.0
+            transpi_P = min(MDOT_TRANSP_M2_KGS * S * transp_factor, mdot_mx) * H_FG
             # Résidus d'eau sur la peau (post-brumisation)
             if water_on_skin > 0.0:
                 evap_cap = mdot_mx * STEP_S
@@ -719,9 +715,9 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
             else:
                 post_P = transpi_P
 
-        else:  # ferme — transpiration naturelle si animal en sudation (mirrors run_simulation_core)
+        else:  # ferme — sudation sigmoïdale
             spray_P = n_spray = 0
-            post_P = min(MDOT_TRANSP_KGS, mdot_mx) * H_FG if transpiring else 0.0
+            post_P = min(MDOT_TRANSP_M2_KGS * S * transp_factor, mdot_mx) * H_FG
 
         # ── RK4 integration ──────────────────────────────────────────
         T_new = float(T_cur)
@@ -741,7 +737,7 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
 
         t_arr.append(round(t, 4))
         T_arr.append(round(T_cur, 3))
-        transp_arr.append(transpiring)
+        transp_arr.append(transp_factor > 0.0)
         T_cur = T_new
         t     = round(t + STEP_MIN / 60.0, 6)
 
@@ -760,7 +756,7 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
 
 def replay_adaptive_schedule(regime_events, misting_events,
                               hourly_weather, duration_h,
-                              masse_kg, qv, rho):
+                              masse_kg, qv, rho, transp_scale=1.0):
     """
     Replay a nominal adaptive schedule on a different animal model.
     No strategic decisions are made: mode at each step is read from the
@@ -775,20 +771,21 @@ def replay_adaptive_schedule(regime_events, misting_events,
     P0_W  = qv * V_m3
     Pmin  = P0_W * 0.60
     Pmax  = P0_W * 1.40
-    T_set = 38.5; Delta = 0.2; k_h = 500.0
+    T_SIG_THERMOREG = 38.5   # °C — inflexion sigmoïde thermoreg
+    K_SIG_THERMOREG = 3.0    # 1/°C — raideur
 
     def Pint(T_C):
-        hot  = k_h * max(0.0, T_C - (T_set + Delta))
-        cold = k_h * max(0.0, (T_set - Delta) - T_C)
-        return float(np.clip(P0_W - hot + cold, Pmin, Pmax))
+        P = Pmin + (Pmax - Pmin) / (1.0 + math.exp(K_SIG_THERMOREG * (T_C - T_SIG_THERMOREG)))
+        return float(max(Pmin, min(Pmax, P)))
 
     STEP_MIN        = 15.0
     N_SUB           = 90
     DT_S            = STEP_MIN * 60.0 / N_SUB
     STEP_S          = STEP_MIN * 60.0
-    MIST_KG_S       = 0.05 / 60.0
-    MDOT_TRANSP_KGS = 0.0002
-    T_RED_ZONE      = 39.5
+    MIST_KG_S          = 0.05 / 60.0
+    MDOT_TRANSP_M2_KGS = 1.5e-5 * transp_scale   # kg/m²/s (10 % pour les cas extrêmes)
+    T_TRANSP_MID       = 39.5
+    K_TRANSP           = 8.0
 
     sorted_regimes  = sorted(regime_events,  key=lambda x: x["t_h"])
     sorted_mistings = sorted(misting_events, key=lambda x: x["t_start_h"])
@@ -807,7 +804,7 @@ def replay_adaptive_schedule(regime_events, misting_events,
     def nearest_w(t_h): return min(ws, key=lambda x: abs(x["t_h"] - t_h))
 
     t_arr = []; T_arr = []; transp_arr = []
-    T_cur = 38.5; water_on_skin = 0.0; transpiring = False
+    T_cur = 38.5; water_on_skin = 0.0; transp_factor = 0.0
 
     t = 0.0
     while t <= duration_h + 1e-9:
@@ -820,13 +817,11 @@ def replay_adaptive_schedule(regime_events, misting_events,
 
         active, mist_end_h = _active_mode(t)
 
-        # Transpiration state (mirrors simulate_adaptive)
+        # Sudation sigmoïdale (mirrors simulate_adaptive)
         if active == "brumisation":
-            transpiring = False
-        elif T_cur > T_RED_ZONE:
-            transpiring = True
-        elif T_cur <= T_set:
-            transpiring = False
+            transp_factor = 0.0
+        else:
+            transp_factor = 1.0 / (1.0 + math.exp(-K_TRANSP * (T_cur - T_TRANSP_MID)))
 
         if active == "brumisation":
             vent = max(wind_amb, 5.0) if is_stopped else max(truck_v, 10.0)
@@ -856,7 +851,7 @@ def replay_adaptive_schedule(regime_events, misting_events,
                 water_on_skin = water_avail
         elif active == "ouvert":
             spray_P = 0.0; n_spray = 0
-            transpi_P = min(MDOT_TRANSP_KGS, mdot_mx) * H_FG if transpiring else 0.0
+            transpi_P = min(MDOT_TRANSP_M2_KGS * S * transp_factor, mdot_mx) * H_FG
             if water_on_skin > 0.0:
                 evap_cap      = mdot_mx * STEP_S
                 evap          = min(water_on_skin, evap_cap)
@@ -866,7 +861,7 @@ def replay_adaptive_schedule(regime_events, misting_events,
                 post_P = transpi_P
         else:
             spray_P = n_spray = 0
-            post_P        = min(MDOT_TRANSP_KGS, mdot_mx) * H_FG if transpiring else 0.0
+            post_P        = min(MDOT_TRANSP_M2_KGS * S * transp_factor, mdot_mx) * H_FG
             water_on_skin = 0.0
 
         T_new = float(T_cur)
@@ -881,7 +876,7 @@ def replay_adaptive_schedule(regime_events, misting_events,
             for _ in range(N_SUB):
                 T_new = rk4_step(T_new, DT_S, f)
 
-        t_arr.append(round(t, 4)); T_arr.append(round(T_cur, 3)); transp_arr.append(transpiring)
+        t_arr.append(round(t, 4)); T_arr.append(round(T_cur, 3)); transp_arr.append(transp_factor > 0.0)
         T_cur = T_new
         t     = round(t + STEP_MIN / 60.0, 6)
 
@@ -899,7 +894,9 @@ def make_payload(masse_kg, qv, rho, duration_h, n_points, regimes):
         "T_interval_max_C":          39.5,
         "debit_apparition_eau_kg_s": 0.0002,
         "thermoreg_enabled":         True,
-        "thermoreg_model":           "lineaire",
+        "thermoreg_model":           "sigmoide",
+        "T_sig_C":                   38.5,
+        "k_sig_per_C":               3.0,
         "T_set_C":                   38.5,
         "Delta_C":                   0.2,
         "k_c_W_K":                   500,
@@ -1034,8 +1031,9 @@ def api_simulate():
         if cas_extremes_enabled:
             f_ch           = pct_chaud / 100.0
             f_fr           = pct_froid / 100.0
-            payload_ch     = appliquer_cas_extreme(payload_ferme, 1.0 + f_ch, 1.0 + f_ch, 1.0 - f_ch)
-            payload_fr     = appliquer_cas_extreme(payload_ferme, 1.0 - f_fr, 1.0 - f_fr, 1.0 + f_fr)
+            # f_masse=1.0 : seul qv change — évite l'inversion due au couplage P0∝f² et thermoreg absolue
+            payload_ch     = appliquer_cas_extreme(payload_ferme, 1.0, 1.0 + f_ch, 1.0 - f_ch)
+            payload_fr     = appliquer_cas_extreme(payload_ferme, 1.0, 1.0 - f_fr, 1.0 + f_fr)
             ferme_chaud    = run_simulation_core(payload_ch).get("series")
             ferme_froid    = run_simulation_core(payload_fr).get("series")
 
@@ -1084,12 +1082,14 @@ def api_simulate():
                     adap_chaud = replay_adaptive_schedule(
                         adap["regime_events"], adap["misting_events"],
                         hourly_weather, duration_h,
-                        poids * (1 + f_ch), qv * (1 + f_ch), rho,
+                        poids, qv * (1 + f_ch), rho,
+                        transp_scale=0.1,
                     )
                     adap_froid = replay_adaptive_schedule(
                         adap["regime_events"], adap["misting_events"],
                         hourly_weather, duration_h,
-                        poids * (1 - f_fr), qv * (1 - f_fr), rho,
+                        poids, qv * (1 - f_fr), rho,
+                        transp_scale=0.1,
                     )
 
         # Build weather display series

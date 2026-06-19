@@ -207,49 +207,65 @@
     <!-- Results (hidden until simulation) -->
     <div id="results" style="display:none;padding:0 24px 24px">
 
-      <div class="risk-banner" id="riskBanner">
-        <div class="risk-dot"></div>
-        <div class="risk-content">
-          <h2 id="riskTitle"></h2>
-          <p id="riskDesc"></p>
-          <p id="riskExtremes" style="display:none;font-size:0.75rem;color:#636366;margin-top:6px;line-height:1.6"></p>
-          <p id="adaptiveNotNeeded" style="display:none;font-size:0.75rem;color:#30d158;margin-top:6px;font-weight:500"></p>
+      <!-- Summary card — shown first after simulation -->
+      <div id="summaryCard" style="display:none"></div>
+
+      <!-- Toggle to expand full graphs & details -->
+      <div id="detailsToggleRow" style="display:none;text-align:center;margin:4px 0 16px">
+        <div class="btn-details-toggle" onclick="toggleDetails()" role="button" tabindex="0">
+          <span id="dtLabel">Graphiques et détails scientifiques</span>
+          <span id="dtChevron" class="dt-chevron">↓</span>
         </div>
-        <div class="risk-tmax" id="riskTmax"></div>
       </div>
 
-      <div class="event-log-card" id="eventLogCard" style="display:none"></div>
+      <!-- Full details section (collapsed by default) -->
+      <div id="detailsSection" style="display:none">
 
-      <div class="graph-card" id="graphCard">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
-          <div class="graph-title" style="margin-bottom:0" data-i18n="graph_title">Température interne de l'animal</div>
-          <div id="curve-toggles" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"></div>
+        <div class="risk-banner" id="riskBanner">
+          <div class="risk-dot"></div>
+          <div class="risk-content">
+            <h2 id="riskTitle"></h2>
+            <p id="riskDesc"></p>
+            <p id="riskExtremes" style="display:none;font-size:0.75rem;color:#636366;margin-top:6px;line-height:1.6"></p>
+            <p id="adaptiveNotNeeded" style="display:none;font-size:0.75rem;color:#30d158;margin-top:6px;font-weight:500"></p>
+          </div>
+          <div class="risk-tmax" id="riskTmax"></div>
         </div>
-        <div id="plotly-main" style="height:320px"></div>
-      </div>
 
-      <div class="weather-card" id="weatherCard">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-          <div class="graph-title" style="margin-bottom:0" data-i18n="weather_title">Conditions météo</div>
-          <span id="weatherSourcePill" style="font-size:0.72rem;padding:3px 10px;border-radius:20px;
-            background:rgba(41,151,255,0.15);color:#2997ff;border:1px solid rgba(41,151,255,0.3);display:none"></span>
+        <div class="event-log-card" id="eventLogCard" style="display:none"></div>
+
+        <div class="graph-card" id="graphCard">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+            <div class="graph-title" style="margin-bottom:0" data-i18n="graph_title">Température interne de l'animal</div>
+            <div id="curve-toggles" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"></div>
+          </div>
+          <div id="plotly-main" style="height:320px"></div>
         </div>
-        <div class="weather-stats">
-          <div class="weather-stat">
-            <div class="label" data-i18n="temp_ext">Temp. ext.</div>
-            <div class="value" id="wStatTemp">—</div>
+
+        <div class="weather-card" id="weatherCard">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <div class="graph-title" style="margin-bottom:0" data-i18n="weather_title">Conditions météo</div>
+            <span id="weatherSourcePill" style="font-size:0.72rem;padding:3px 10px;border-radius:20px;
+              background:rgba(41,151,255,0.15);color:#2997ff;border:1px solid rgba(41,151,255,0.3);display:none"></span>
           </div>
-          <div class="weather-stat">
-            <div class="label" data-i18n="humidity">Humidité</div>
-            <div class="value" id="wStatRH">—</div>
+          <div class="weather-stats">
+            <div class="weather-stat">
+              <div class="label" data-i18n="temp_ext">Temp. ext.</div>
+              <div class="value" id="wStatTemp">—</div>
+            </div>
+            <div class="weather-stat">
+              <div class="label" data-i18n="humidity">Humidité</div>
+              <div class="value" id="wStatRH">—</div>
+            </div>
+            <div class="weather-stat">
+              <div class="label" data-i18n="wind">Vent</div>
+              <div class="value" id="wStatVent">—</div>
+            </div>
           </div>
-          <div class="weather-stat">
-            <div class="label" data-i18n="wind">Vent</div>
-            <div class="value" id="wStatVent">—</div>
-          </div>
+          <div id="plotly-weather" style="height:240px"></div>
         </div>
-        <div id="plotly-weather" style="height:240px"></div>
-      </div>
+
+      </div><!-- /detailsSection -->
 
     </div><!-- /results -->
 
@@ -378,11 +394,11 @@
         <div class="p-grid" style="margin-top:13px">
           <div class="p-group">
             <label class="p-label">Écart chaud (%)</label>
-            <input class="p-input" type="number" id="pct_chaud" value="20" min="1" max="50">
+            <input class="p-input" type="number" id="pct_chaud" value="10" min="1" max="50">
           </div>
           <div class="p-group">
             <label class="p-label">Écart froid (%)</label>
-            <input class="p-input" type="number" id="pct_froid" value="20" min="1" max="50">
+            <input class="p-input" type="number" id="pct_froid" value="10" min="1" max="50">
           </div>
         </div>
       </div>
