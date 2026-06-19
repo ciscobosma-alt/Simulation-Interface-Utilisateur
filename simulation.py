@@ -852,10 +852,10 @@ def run_all_cases(payload: dict) -> dict:
         f_ch = pct_chaud / 100.0
         f_fr = pct_froid / 100.0
 
-        payload_chaud = appliquer_cas_extreme(payload, f_masse=1.0 + f_ch, f_qv=1.0 + f_ch, f_vent=1.0 - f_ch)
+        payload_chaud = appliquer_cas_extreme(payload, f_masse=1.0, f_qv=1.0 + f_ch, f_vent=1.0 - f_ch)
         chaud = run_simulation_core(payload_chaud, label_cas="Cas chaud")
 
-        payload_froid = appliquer_cas_extreme(payload, f_masse=1.0 - f_fr, f_qv=1.0 - f_fr, f_vent=1.0 + f_fr)
+        payload_froid = appliquer_cas_extreme(payload, f_masse=1.0, f_qv=1.0 - f_fr, f_vent=1.0 + f_fr)
         froid = run_simulation_core(payload_froid, label_cas="Cas froid")
 
     rows = []
