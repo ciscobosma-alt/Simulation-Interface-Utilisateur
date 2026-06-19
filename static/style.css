@@ -1353,35 +1353,7 @@ input[type="range"]::-moz-range-thumb {
 }
 .theme-toggle-btn:hover { background: rgba(255,255,255,0.08); }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   GRADIENT BUTTONS — normal : dégradé plein | hover : fond du site + bordure dégradée
-   Exclusions : .lang-btn et .theme-toggle-btn (petits boutons utilitaires)
-══════════════════════════════════════════════════════════════════════════ */
-button:not(.lang-btn):not(.theme-toggle-btn):not(.res-pill) {
-  background: linear-gradient(144deg, #af40ff, #5b42f3 50%, #00ddeb);
-  border: 3px solid transparent;
-  border-radius: 8px;
-  box-shadow: rgba(151, 65, 252, 0.2) 0 15px 30px -5px;
-  box-sizing: border-box;
-  color: #ffffff;
-  transition: background 0.3s, box-shadow 0.3s, transform 0.15s;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-
-button:not(.lang-btn):not(.theme-toggle-btn):not(.res-pill):hover {
-  background:
-    linear-gradient(var(--bg), var(--bg)) padding-box,
-    linear-gradient(144deg, #af40ff, #5b42f3 50%, #00ddeb) border-box;
-  box-shadow: rgba(151, 65, 252, 0.45) 0 15px 30px -5px;
-  outline: 0;
-}
-
-button:not(.lang-btn):not(.theme-toggle-btn):not(.res-pill):active {
-  transform: scale(0.9);
-  outline: 0;
-}
+/* (gradient button variables defined in :root — used by .btn-primary in hero section) */
 
 /* ══════════════════════════════════════════════════════════════════════════
    RESULTS SUMMARY CARD
