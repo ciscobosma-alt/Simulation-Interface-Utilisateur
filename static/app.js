@@ -916,18 +916,36 @@ function renderSummary(data) {
       ouvert:      currentLang === 'fr' ? 'Ouvrir les fenêtres' : 'Open windows',
       brumisation: currentLang === 'fr' ? 'Brumisation' : 'Misting',
     };
-    const MODE_DOT = { ferme: '#86868b', ouvert: '#ff9f0a', brumisation: '#2997ff' };
+    const MODE_COLOR = { ferme: '#636366', ouvert: '#ff9f0a', brumisation: '#2997ff' };
 
     const events = (adaptive.regime_events || [])
       .slice()
       .sort((a, b) => a.t_h - b.t_h);
 
-    const rows = events.map(e => `
-      <div class="sum-tl-row">
-        <span class="sum-tl-time">${formatSimTime(e.t_h)}</span>
-        <span class="sum-tl-dot" style="background:${MODE_DOT[e.mode] || '#86868b'}"></span>
-        <span class="sum-tl-label">${MODE_LABEL[e.mode] || e.mode}</span>
-      </div>`).join('');
+    const serT = adaptive.series && adaptive.series.t_h;
+    const tripEndH = serT ? serT[serT.length - 1] : null;
+
+    const rows = events.map((e, i) => {
+      const nextH = i < events.length - 1 ? events[i + 1].t_h : tripEndH;
+      const durH  = (nextH !== null && nextH !== undefined) ? nextH - e.t_h : null;
+      let durStr = '';
+      if (durH !== null && durH > 0) {
+        const h = Math.floor(durH);
+        const m = Math.round((durH - h) * 60);
+        durStr = h > 0 ? `${h}h${m > 0 ? String(m).padStart(2, '0') : ''}` : `${m}min`;
+      }
+      const col = MODE_COLOR[e.mode] || '#636366';
+      const isLast = i === events.length - 1;
+      return `
+        <div class="sum-tl-row${isLast ? ' sum-tl-last' : ''}">
+          <span class="sum-tl-time">${formatSimTime(e.t_h)}</span>
+          <span class="sum-tl-dot" style="background:${col};box-shadow:0 0 0 3px #1a1a1e,0 0 8px ${col}80"></span>
+          <div class="sum-tl-right">
+            <span class="sum-tl-label" style="color:${col}">${MODE_LABEL[e.mode] || e.mode}</span>
+            ${durStr ? `<span class="sum-tl-dur">${durStr}</span>` : ''}
+          </div>
+        </div>`;
+    }).join('');
 
     if (rows) {
       timelineHtml = `
