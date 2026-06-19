@@ -1142,31 +1142,61 @@ function renderFinanceCard(data) {
   if (!card) return;
 
   // ── Paramètres économiques (France 2024) ──
-  const FUEL_L_PER_100KM  = 30;       // L/100km camion bétaillère
-  const FUEL_PRICE_EUR_L  = 1.85;     // €/L diesel
-  const TARIF_KM          = 3.50;     // €/km tarif transport
-  const DRIVER_SHARE      = 0.40;     // 40 % du tarif = coût chauffeur
-  const NIGHT_PREMIUM     = 0.35;     // 35 % surcoût nuit (25 % chauffeur + 10 % logistique)
+  // Surcoût aéro fenêtres ouvertes : ~3 €/h à 80 km/h, proportionnel à v (drag ∝ v²)
+  const DRAG_RATE_AT_80   = 3.0;   // €/h fenêtres ouvertes à 80 km/h
+  const V_REF             = 80;    // km/h de référence
+  const TARIF_KM          = 3.50;  // €/km tarif transport
+  const DRIVER_SHARE      = 0.40;  // 40 % = part chauffeur
+  const NIGHT_PREMIUM     = 0.35;  // 35 % surcoût nuit
 
-  const distKm      = routeDurationH * (data.avg_speed_kmh || routeAvgSpeedKmh || 80);
-  const fuelCost    = distKm * (FUEL_L_PER_100KM / 100) * FUEL_PRICE_EUR_L;
-  const nightSaving = distKm * TARIF_KM * DRIVER_SHARE * NIGHT_PREMIUM;
-  const netBenefit  = nightSaving - fuelCost;
-  const isPositive  = netBenefit >= 0;
+  const avgSpeed  = data.avg_speed_kmh || routeAvgSpeedKmh || 80;
+  const distKm    = routeDurationH * avgSpeed;
+  const isFr      = currentLang === 'fr';
 
-  const fmt = v => `${v >= 0 ? '+' : ''}${Math.round(v).toLocaleString('fr-FR')} €`;
-  const isFr = currentLang === 'fr';
+  // ── Temps fenêtres ouvertes depuis les regime_events ──
+  const adaptive = data.adaptive;
+  let openHours  = 0;
+  if (adaptive && adaptive.regime_events) {
+    const serT    = adaptive.series && adaptive.series.t_h;
+    const endH    = serT ? serT[serT.length - 1] : routeDurationH;
+    const events  = [...(adaptive.regime_events)].sort((a, b) => a.t_h - b.t_h);
+    events.forEach((e, i) => {
+      const nextT = i < events.length - 1 ? events[i + 1].t_h : endH;
+      if (e.mode === 'ouvert') openHours += Math.max(0, nextT - e.t_h);
+    });
+  }
 
-  // Mini bar chart — 6 barres alternant économie (vert) / carburant (ambre)
-  const maxVal  = Math.max(nightSaving, fuelCost, 1);
-  const savePct = Math.round((nightSaving / maxVal) * 100);
-  const fuelPct = Math.round((fuelCost  / maxVal) * 100);
-  const barData = [savePct, fuelPct, savePct, fuelPct, savePct, fuelPct];
-  const barColors = ['#30d158','#ff9f0a','#30d158','#ff9f0a','#30d158','#ff9f0a'];
-  const barsHtml = barData.map((h, i) => `
-    <div style="height:${h}%;width:12px;border-radius:3px;background:${barColors[i]}26;align-self:flex-end">
-      <div style="height:${i % 2 === 0 ? savePct : fuelPct}%;width:100%;border-radius:3px;background:${barColors[i]};transition:height .3s"></div>
-    </div>`).join('');
+  // ── Calculs ──
+  // Surcoût aéro : drag ∝ v, donc coût ∝ v² × durée → on simplifie à linéaire en vitesse
+  const dragSurcharge = openHours * DRAG_RATE_AT_80 * (avgSpeed / V_REF);
+  const nightSaving   = distKm * TARIF_KM * DRIVER_SHARE * NIGHT_PREMIUM;
+  const netBenefit    = nightSaving - dragSurcharge;
+  const isPositive    = netBenefit >= 0;
+
+  const fmt    = v => `${v >= 0 ? '+' : '−'}${Math.abs(Math.round(v)).toLocaleString('fr-FR')} €`;
+  const fmtH   = h => { const hh = Math.floor(h), mm = Math.round((h - hh) * 60); return hh > 0 ? `${hh}h${mm > 0 ? String(mm).padStart(2,'0') : ''}` : `${mm}min`; };
+
+  // ── Mini bar chart : drag (ambre) vs économie nuit (vert) ──
+  const maxVal    = Math.max(nightSaving, dragSurcharge, 0.1);
+  const savePct   = Math.round((nightSaving   / maxVal) * 88);
+  const dragPct   = dragSurcharge > 0 ? Math.round((dragSurcharge / maxVal) * 88) : 0;
+  // 6 barres alternées, hauteurs symboliques
+  const bars = [
+    { h: savePct, col: '#30d158' },
+    { h: dragPct, col: '#ff9f0a' },
+    { h: Math.round(savePct * 0.85), col: '#30d158' },
+    { h: Math.round(dragPct * 0.9),  col: '#ff9f0a' },
+    { h: Math.round(savePct * 0.92), col: '#30d158' },
+    { h: Math.round(dragPct * 0.95), col: '#ff9f0a' },
+  ];
+  const barsHtml = bars.map(b => `
+    <div style="height:${Math.max(b.h,4)}%;width:12px;border-radius:3px 3px 2px 2px;background:${b.col};opacity:${b.h > 0 ? 1 : 0.15};align-self:flex-end"></div>`
+  ).join('');
+
+  // Sous-label drag
+  const dragSub = openHours > 0
+    ? `${fmtH(openHours)} à ${Math.round(avgSpeed)} km/h`
+    : (isFr ? 'fenêtres fermées' : 'windows closed');
 
   card.innerHTML = `
     <div class="fin-card">
@@ -1191,14 +1221,14 @@ function renderFinanceCard(data) {
 
         <div class="fin-stats">
           <div class="fin-stat">
-            <p class="fin-stat-label">${isFr ? 'Surcoût carburant' : 'Fuel cost'}</p>
-            <p class="fin-stat-value fin-neg">${fmt(-fuelCost)}</p>
-            <span class="fin-stat-sub">${isFr ? 'charge du trajet' : 'trip expense'}</span>
+            <p class="fin-stat-label">${isFr ? 'Surcoût aéro (fenêtres)' : 'Aero drag (open windows)'}</p>
+            <p class="fin-stat-value ${dragSurcharge > 0 ? 'fin-neg' : ''}">${dragSurcharge > 0 ? fmt(-dragSurcharge) : '0 €'}</p>
+            <span class="fin-stat-sub">${dragSub}</span>
           </div>
           <div class="fin-stat">
-            <p class="fin-stat-label">${isFr ? 'Économie vs nuit' : 'Saving vs night'}</p>
+            <p class="fin-stat-label">${isFr ? 'Économie vs trajet nuit' : 'Saving vs night trip'}</p>
             <p class="fin-stat-value fin-pos">${fmt(nightSaving)}</p>
-            <span class="fin-stat-sub">${isFr ? 'prime évitée' : 'premium avoided'}</span>
+            <span class="fin-stat-sub">${isFr ? 'prime chauffeur évitée' : 'night premium avoided'}</span>
           </div>
         </div>
 
