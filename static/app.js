@@ -1137,6 +1137,86 @@ function toggleDetails() {
   }
 }
 
+function renderFinanceCard(data) {
+  const card = document.getElementById('finCard');
+  if (!card) return;
+
+  // ── Paramètres économiques (France 2024) ──
+  const FUEL_L_PER_100KM  = 30;       // L/100km camion bétaillère
+  const FUEL_PRICE_EUR_L  = 1.85;     // €/L diesel
+  const TARIF_KM          = 3.50;     // €/km tarif transport
+  const DRIVER_SHARE      = 0.40;     // 40 % du tarif = coût chauffeur
+  const NIGHT_PREMIUM     = 0.35;     // 35 % surcoût nuit (25 % chauffeur + 10 % logistique)
+
+  const distKm      = routeDurationH * (data.avg_speed_kmh || routeAvgSpeedKmh || 80);
+  const fuelCost    = distKm * (FUEL_L_PER_100KM / 100) * FUEL_PRICE_EUR_L;
+  const nightSaving = distKm * TARIF_KM * DRIVER_SHARE * NIGHT_PREMIUM;
+  const netBenefit  = nightSaving - fuelCost;
+  const isPositive  = netBenefit >= 0;
+
+  const fmt = v => `${v >= 0 ? '+' : ''}${Math.round(v).toLocaleString('fr-FR')} €`;
+  const isFr = currentLang === 'fr';
+
+  // Mini bar chart — 6 barres alternant économie (vert) / carburant (ambre)
+  const maxVal  = Math.max(nightSaving, fuelCost, 1);
+  const savePct = Math.round((nightSaving / maxVal) * 100);
+  const fuelPct = Math.round((fuelCost  / maxVal) * 100);
+  const barData = [savePct, fuelPct, savePct, fuelPct, savePct, fuelPct];
+  const barColors = ['#30d158','#ff9f0a','#30d158','#ff9f0a','#30d158','#ff9f0a'];
+  const barsHtml = barData.map((h, i) => `
+    <div style="height:${h}%;width:12px;border-radius:3px;background:${barColors[i]}26;align-self:flex-end">
+      <div style="height:${i % 2 === 0 ? savePct : fuelPct}%;width:100%;border-radius:3px;background:${barColors[i]};transition:height .3s"></div>
+    </div>`).join('');
+
+  card.innerHTML = `
+    <div class="fin-card">
+      <div class="fin-glow"></div>
+      <div class="fin-inner-bg"></div>
+      <div class="fin-content">
+
+        <div class="fin-header">
+          <div class="fin-title-group">
+            <div class="fin-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
+              </svg>
+            </div>
+            <span class="fin-title">${isFr ? 'Analyse financière' : 'Financial analysis'}</span>
+          </div>
+          <span class="fin-badge">
+            <span class="fin-badge-dot"></span>
+            ${Math.round(distKm)} km
+          </span>
+        </div>
+
+        <div class="fin-stats">
+          <div class="fin-stat">
+            <p class="fin-stat-label">${isFr ? 'Surcoût carburant' : 'Fuel cost'}</p>
+            <p class="fin-stat-value fin-neg">${fmt(-fuelCost)}</p>
+            <span class="fin-stat-sub">${isFr ? 'charge du trajet' : 'trip expense'}</span>
+          </div>
+          <div class="fin-stat">
+            <p class="fin-stat-label">${isFr ? 'Économie vs nuit' : 'Saving vs night'}</p>
+            <p class="fin-stat-value fin-pos">${fmt(nightSaving)}</p>
+            <span class="fin-stat-sub">${isFr ? 'prime évitée' : 'premium avoided'}</span>
+          </div>
+        </div>
+
+        <div class="fin-chart">
+          ${barsHtml}
+        </div>
+
+        <div class="fin-footer">
+          <span class="fin-net-label">${isFr ? 'Bénéfice net ce trajet' : 'Net benefit this trip'}</span>
+          <span class="fin-net-value" style="color:${isPositive ? '#30d158' : '#ff453a'}">${fmt(netBenefit)}</span>
+        </div>
+
+      </div>
+    </div>`;
+
+  card.style.display = 'block';
+}
+
 function renderResults(data) {
   lastSimData = data;
   const section = document.getElementById('results');
@@ -1152,6 +1232,7 @@ function renderResults(data) {
 
   // Show summary first
   renderSummary(data);
+  renderFinanceCard(data);
   document.getElementById('detailsToggleRow').style.display = '';
 
   // Risk banner — show adaptive result if available, else ferme

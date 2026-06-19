@@ -1553,6 +1553,73 @@ input[type="range"]::-moz-range-thumb {
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Financial card ── */
+.fin-card {
+  position: relative;
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.fin-glow {
+  position: absolute; inset: 0; border-radius: 14px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6, #ec4899);
+  opacity: 0.18;
+  filter: blur(2px);
+}
+.fin-inner-bg {
+  position: absolute; inset: 1px; border-radius: 13px;
+  background: #0a0a14;
+}
+.fin-content {
+  position: relative; z-index: 1;
+}
+.fin-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.fin-title-group { display: flex; align-items: center; gap: 8px; }
+.fin-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 8px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff; flex-shrink: 0;
+}
+.fin-title { font-size: 0.8rem; font-weight: 600; color: #fff; }
+.fin-badge {
+  display: flex; align-items: center; gap: 5px;
+  background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.25);
+  padding: 3px 8px; border-radius: 20px;
+  font-size: 0.68rem; font-weight: 600; color: #a5b4fc;
+}
+.fin-badge-dot {
+  width: 5px; height: 5px; border-radius: 50%; background: #a5b4fc;
+}
+.fin-stats {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  margin-bottom: 12px;
+}
+.fin-stat {
+  background: rgba(255,255,255,0.04); border-radius: 10px; padding: 10px 12px;
+}
+.fin-stat-label { font-size: 0.68rem; color: #6b7280; margin-bottom: 4px; }
+.fin-stat-value { font-size: 1rem; font-weight: 700; color: #fff; margin-bottom: 2px; }
+.fin-stat-value.fin-pos { color: #30d158; }
+.fin-stat-value.fin-neg { color: #ff9f0a; }
+.fin-stat-sub { font-size: 0.62rem; color: #4b5563; }
+.fin-chart {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  height: 56px; gap: 4px;
+  background: rgba(255,255,255,0.025); border-radius: 8px;
+  padding: 6px 8px; margin-bottom: 12px;
+}
+.fin-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  border-top: 1px solid rgba(255,255,255,0.07); padding-top: 10px;
+}
+.fin-net-label { font-size: 0.72rem; color: #6b7280; }
+.fin-net-value { font-size: 0.92rem; font-weight: 700; }
+
 /* Details toggle link */
 .btn-details-toggle {
   display: inline-flex;
