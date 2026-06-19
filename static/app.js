@@ -947,6 +947,38 @@ function renderSummary(data) {
       : `<div class="sum-val-note sum-note-warn">${currentLang === 'fr' ? 'Stratégie adaptative nécessaire' : 'Adaptive strategy required'}</div>`;
   }
 
+  // Diagnostic pills (extreme case risk signals)
+  let diagHtml = '';
+  {
+    const isFr = currentLang === 'fr';
+    const riskChaud = (adaptive && data.risk_adap_chaud) ? data.risk_adap_chaud : data.risk_ferme_chaud;
+    const riskFroid = (adaptive && data.risk_adap_froid) ? data.risk_adap_froid : data.risk_ferme_froid;
+    const pills = [];
+
+    if (riskFroid && riskFroid !== 'ok') {
+      if (riskFroid === 'caution') {
+        pills.push({ level: 'warn', text: isFr ? 'Risque accru' : 'Elevated risk' });
+      } else {
+        pills.push({ level: 'danger', text: isFr ? 'Stratégie adaptative obligatoire' : 'Adaptive strategy mandatory' });
+      }
+    }
+    if (riskChaud && (riskChaud === 'warning' || riskChaud === 'danger')) {
+      pills.push({ level: 'danger', text: isFr ? 'Risque très élevé' : 'Very high risk' });
+    }
+    if (adaptive && adaptive.risk && (adaptive.risk === 'warning' || adaptive.risk === 'danger')) {
+      pills.push({ level: 'danger', text: isFr ? 'Stratégie adaptative insuffisante' : 'Adaptive strategy insufficient' });
+    }
+    if (adaptive && (adaptive.water_shortfall_L ?? 0) > 0) {
+      pills.push({ level: 'warn', text: isFr ? 'Brumisation insuffisante' : 'Insufficient misting' });
+    }
+
+    if (pills.length > 0) {
+      diagHtml = `<div class="sum-diag-row">${
+        pills.map(p => `<span class="sum-diag-pill ${p.level}">${p.text}</span>`).join('')
+      }</div>`;
+    }
+  }
+
   const card = document.getElementById('summaryCard');
   card.innerHTML = `
     <div class="sum-header">
@@ -962,6 +994,7 @@ function renderSummary(data) {
         ${adaptNote}
       </div>
     </div>
+    ${diagHtml}
     ${waterHtml}
     ${timelineHtml}`;
 

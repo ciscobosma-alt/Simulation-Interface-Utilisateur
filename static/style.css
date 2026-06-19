@@ -1427,6 +1427,12 @@ button:not(.lang-btn):not(.theme-toggle-btn):not(.res-pill):active {
 .sum-note-ok   { color: #636366; }
 .sum-note-warn { color: #ff9f0a; }
 
+/* Diagnostic pills */
+.sum-diag-row  { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 20px 10px; }
+.sum-diag-pill { font-size: 0.7rem; font-weight: 600; padding: 3px 10px; border-radius: 20px; letter-spacing: 0.01em; }
+.sum-diag-pill.warn   { background: rgba(255,159,10,0.12); color: #ff9f0a; border: 1px solid rgba(255,159,10,0.28); }
+.sum-diag-pill.danger { background: rgba(255,69,58,0.12);  color: #ff453a; border: 1px solid rgba(255,69,58,0.28); }
+
 /* Section cards inside summary */
 .sum-section {
   background: rgba(255,255,255,0.03);

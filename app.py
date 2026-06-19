@@ -1028,6 +1028,7 @@ def api_simulate():
 
         # Cas extrêmes — fenêtres fermées (chaud / froid)
         ferme_chaud = ferme_froid = None
+        risk_ferme_chaud = risk_ferme_froid = None
         if cas_extremes_enabled:
             f_ch           = pct_chaud / 100.0
             f_fr           = pct_froid / 100.0
@@ -1036,6 +1037,8 @@ def api_simulate():
             payload_fr     = appliquer_cas_extreme(payload_ferme, 1.0, 1.0 - f_fr, 1.0 + f_fr, f_transp=1.0)
             ferme_chaud    = run_simulation_core(payload_ch).get("series")
             ferme_froid    = run_simulation_core(payload_fr).get("series")
+            risk_ferme_chaud = classify_risk(max(ferme_chaud["T_C"])) if ferme_chaud else None
+            risk_ferme_froid = classify_risk(max(ferme_froid["T_C"])) if ferme_froid else None
 
         # ── Étape 2 : si risque → fenêtres ouvertes (comparaison) ──
         res_ouvert  = None
@@ -1051,6 +1054,7 @@ def api_simulate():
         # ── Étape 3 : stratégie adaptative (si activée) ────────────
         res_adaptive = None
         adap_chaud = adap_froid = None
+        risk_adap_chaud = risk_adap_froid = None
         adaptive_not_needed = False
         if adaptive_enabled:
             if risk_ferme == "ok":
@@ -1089,8 +1093,10 @@ def api_simulate():
                         adap["regime_events"], adap["misting_events"],
                         hourly_weather, duration_h,
                         poids, qv * (1 - f_fr), rho,
-                        transp_scale=0.1,
+                        transp_scale=1.0,
                     )
+                    risk_adap_chaud = classify_risk(max(adap_chaud["T_C"])) if adap_chaud else None
+                    risk_adap_froid = classify_risk(max(adap_froid["T_C"])) if adap_froid else None
 
         # Build weather display series
         weather_series = {
@@ -1115,8 +1121,12 @@ def api_simulate():
             "adaptive":         res_adaptive,
             "adaptive_chaud":   adap_chaud,
             "adaptive_froid":   adap_froid,
-            "risk_ferme":       risk_ferme,
-            "risk_ouvert":      risk_ouvert,
+            "risk_ferme":        risk_ferme,
+            "risk_ouvert":       risk_ouvert,
+            "risk_ferme_chaud":  risk_ferme_chaud,
+            "risk_ferme_froid":  risk_ferme_froid,
+            "risk_adap_chaud":   risk_adap_chaud,
+            "risk_adap_froid":   risk_adap_froid,
             "T_max_ferme":      round(T_max_ferm, 2),
             "T_max_ouvert":     round(T_max_ouv, 2) if T_max_ouv is not None else None,
             "strategy_needed":      risk_ferme != "ok",
