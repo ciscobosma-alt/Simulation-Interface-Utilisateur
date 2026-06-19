@@ -112,6 +112,14 @@
         <div class="p-section-hd">
           <div class="p-step">02</div>
           <h3 class="p-section-title" data-i18n="s2_title">Itinéraire</h3>
+          <div class="hist-trigger-wrap">
+            <button class="hist-btn" id="histBtn" onclick="toggleHistory(event)" title="Trajets récents" style="display:none">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+              </svg>
+            </button>
+            <div class="hist-dropdown" id="histDropdown"></div>
+          </div>
         </div>
 
         <div class="wp-builder">

@@ -236,6 +236,102 @@ function makeMarkerIcon(color, glow) {
   });
 }
 
+// ── Route history (localStorage) ──────────────────────────────────────────────
+const HIST_KEY = 'sitesphere_route_history';
+const HIST_MAX = 8;
+const RISK_COL = { ok: '#30d158', caution: '#ff9f0a', warning: '#ff9f0a', danger: '#ff453a' };
+
+function saveToHistory(data) {
+  const from = document.getElementById('city_depart').value.trim();
+  const to   = document.getElementById('city_arrivee').value.trim();
+  if (!from || !to) return;
+  const entry = {
+    from, fromCoord,
+    to,   toCoord,
+    date:      document.getElementById('date_depart').value,
+    time:      document.getElementById('heure_depart').value,
+    race:      document.getElementById('race')?.value || 'autre',
+    raceLabel: document.getElementById('race_display')?.textContent || '',
+    nBovins:   parseInt(document.getElementById('n_bovins').value) || 10,
+    poids:     parseInt(document.getElementById('poids').value) || 350,
+    savedAt:   new Date().toISOString(),
+    tMax:      data.adaptive ? data.adaptive.T_max : data.T_max_ferme,
+    risk:      data.adaptive ? data.adaptive.risk   : data.risk_ferme,
+  };
+  let hist = JSON.parse(localStorage.getItem(HIST_KEY) || '[]');
+  hist = hist.filter(h => !(h.from === entry.from && h.to === entry.to && h.date === entry.date && h.time === entry.time));
+  hist.unshift(entry);
+  localStorage.setItem(HIST_KEY, JSON.stringify(hist.slice(0, HIST_MAX)));
+  _renderHistBtn();
+}
+
+function _loadHist() { return JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); }
+
+function _renderHistBtn() {
+  const btn = document.getElementById('histBtn');
+  if (btn) btn.style.display = _loadHist().length > 0 ? '' : 'none';
+}
+
+function toggleHistory(e) {
+  e.stopPropagation();
+  const dd = document.getElementById('histDropdown');
+  if (!dd) return;
+  if (dd.classList.contains('hist-open')) { dd.classList.remove('hist-open'); return; }
+  _renderHistDropdown();
+  dd.classList.add('hist-open');
+  setTimeout(() => document.addEventListener('click', _closeHist, { once: true }), 0);
+}
+
+function _closeHist() { document.getElementById('histDropdown')?.classList.remove('hist-open'); }
+
+function _renderHistDropdown() {
+  const hist = _loadHist();
+  const dd   = document.getElementById('histDropdown');
+  if (!dd) return;
+  const isFr = currentLang === 'fr';
+  const items = hist.map((h, i) => {
+    const d = h.date ? new Date(h.date + 'T12:00:00').toLocaleDateString(isFr ? 'fr-FR' : 'en-GB', { day: 'numeric', month: 'short' }) : '';
+    const col = RISK_COL[h.risk] || '#636366';
+    const tMaxStr = h.tMax != null ? `${h.tMax.toFixed(1)} °C` : '';
+    return `<div class="hist-item" onclick="restoreRoute(${i})">
+      <div class="hist-route">${h.from} → ${h.to}</div>
+      <div class="hist-meta">
+        <span>${d}${h.time ? ' · ' + h.time : ''} · ${h.nBovins} ${isFr ? 'an.' : 'an.'} ${h.poids}kg</span>
+        ${tMaxStr ? `<span class="hist-tmax" style="color:${col}">${tMaxStr}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  dd.innerHTML = `
+    <div class="hist-header">
+      <span>${isFr ? 'Trajets récents' : 'Recent routes'}</span>
+      <button class="hist-clear" onclick="clearHistory(event)">${isFr ? 'Effacer' : 'Clear'}</button>
+    </div>
+    ${items}`;
+}
+
+function restoreRoute(idx) {
+  const h = _loadHist()[idx];
+  if (!h) return;
+  document.getElementById('city_depart').value  = h.from;
+  document.getElementById('city_arrivee').value = h.to;
+  fromCoord = h.fromCoord;
+  toCoord   = h.toCoord;
+  document.getElementById('date_depart').value  = h.date;
+  document.getElementById('heure_depart').value = h.time;
+  if (h.race && h.raceLabel) selectRace(h.race, h.raceLabel);
+  document.getElementById('n_bovins').value = h.nBovins;
+  document.getElementById('poids').value    = h.poids;
+  _closeHist();
+  if (fromCoord && toCoord) calcRoute();
+}
+
+function clearHistory(e) {
+  e.stopPropagation();
+  localStorage.removeItem(HIST_KEY);
+  _closeHist();
+  _renderHistBtn();
+}
+
 // ── City search ───────────────────────────────────────────────────────────────
 let fromCoord = null, toCoord = null;
 let debounceTimers = {};
@@ -655,6 +751,7 @@ async function runSimulation() {
     stopSimAnimation();
     document.getElementById('wizOverlay').classList.remove('open');
     renderResults(data);
+    saveToHistory(data);
 
   } catch (e) {
     stopSimAnimation();
@@ -1771,4 +1868,5 @@ document.addEventListener('DOMContentLoaded', () => {
   setupCitySearch('city_arrivee', 'sug_arrivee', onToSelected);
   setLang('fr');
   updateBreedNote();
+  _renderHistBtn();
 });
