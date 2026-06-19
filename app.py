@@ -1032,8 +1032,8 @@ def api_simulate():
             f_ch           = pct_chaud / 100.0
             f_fr           = pct_froid / 100.0
             # f_masse=1.0 : seul qv change — évite l'inversion due au couplage P0∝f² et thermoreg absolue
-            payload_ch     = appliquer_cas_extreme(payload_ferme, 1.0, 1.0 + f_ch, 1.0 - f_ch)
-            payload_fr     = appliquer_cas_extreme(payload_ferme, 1.0, 1.0 - f_fr, 1.0 + f_fr)
+            payload_ch     = appliquer_cas_extreme(payload_ferme, 1.0, 1.0 + f_ch, 1.0 - f_ch, f_transp=0.1)
+            payload_fr     = appliquer_cas_extreme(payload_ferme, 1.0, 1.0 - f_fr, 1.0 + f_fr, f_transp=1.0)
             ferme_chaud    = run_simulation_core(payload_ch).get("series")
             ferme_froid    = run_simulation_core(payload_fr).get("series")
 
