@@ -361,6 +361,7 @@ const mistingDurationMin = 60;
 let wizAdaptive  = false;   // adaptive strategy on/off
 let wizMisting   = false;   // misting available (only relevant when adaptive on)
 let wizReservoir = 10;      // liters (null = unlimited)
+let simHourStart = 8;       // departure hour (float, captured per run)
 
 function wizardContinue() {
   if (!fromCoord || !toCoord) { showAlert(t('no_route')); return; }
@@ -616,6 +617,7 @@ async function runSimulation() {
   try {
     const timeVal       = document.getElementById('heure_depart').value || '08:00';
     const hourStart     = parseInt(timeVal.split(':')[0]) || 8;
+    simHourStart = hourStart + (parseInt(timeVal.split(':')[1]) || 0) / 60;
     const departureDateEl = document.getElementById('date_depart');
     const departureDate = departureDateEl ? departureDateEl.value : new Date().toISOString().slice(0, 10);
 
@@ -857,10 +859,152 @@ function makeTranspGradientTrace(tArr, TArr, transpScale, name) {
   };
 }
 
+function formatSimTime(t_h) {
+  const total = simHourStart + t_h;
+  const h = Math.floor(total) % 24;
+  const m = Math.round((total % 1) * 60);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function renderSummary(data) {
+  const adaptive  = data.adaptive;
+  const riskSrc   = adaptive ? adaptive.risk : data.risk_ferme;
+  const tMax      = adaptive ? adaptive.T_max : data.T_max_ferme;
+  const isGood    = riskSrc === 'ok' || riskSrc === 'caution';
+  const color     = riskSrc === 'ok' ? '#30d158' : (riskSrc === 'caution' || riskSrc === 'warning') ? '#ff9f0a' : '#ff453a';
+
+  const checkPath = `<path d="M20 38 L30 50 L54 26" stroke="${color}" stroke-width="5.5" fill="none"
+    stroke-linecap="round" stroke-linejoin="round" class="val-stroke val-check"/>`;
+  const crossPath = `
+    <path d="M24 24 L52 52" stroke="${color}" stroke-width="5.5" fill="none" stroke-linecap="round" class="val-stroke val-x1"/>
+    <path d="M52 24 L24 52" stroke="${color}" stroke-width="5.5" fill="none" stroke-linecap="round" class="val-stroke val-x2"/>`;
+
+  // Water section
+  let waterHtml = '';
+  if (adaptive && adaptive.water_used_L !== undefined && adaptive.available_water_L !== null) {
+    const used  = adaptive.water_used_L;
+    const avail = adaptive.available_water_L;
+    const pct   = avail > 0 ? Math.min(100, (used / avail) * 100) : 0;
+    const short = adaptive.water_shortfall_L ?? 0;
+    const rem   = adaptive.water_remaining_L ?? 0;
+    const barColor = short > 0 ? '#ff453a' : pct > 70 ? '#ff9f0a' : '#30d158';
+    const statusLine = short > 0
+      ? `<div class="sum-water-status warn">⚠ Déficit : ${short.toFixed(1)} L manquants</div>`
+      : `<div class="sum-water-status ok">✓ ${rem.toFixed(1)} L restants dans le réservoir</div>`;
+    waterHtml = `
+      <div class="sum-section">
+        <div class="sum-section-label">💧 ${currentLang === 'fr' ? 'Eau de brumisation' : 'Misting water'}</div>
+        <div class="sum-water-row">
+          <div class="sum-water-bar-wrap"><div class="sum-water-fill" style="width:${pct.toFixed(1)}%;background:${barColor}"></div></div>
+          <span class="sum-water-qty">${used.toFixed(1)} / ${avail.toFixed(0)} L</span>
+        </div>
+        ${statusLine}
+      </div>`;
+  } else if (adaptive && adaptive.available_water_L === null && adaptive.water_used_L > 0) {
+    waterHtml = `
+      <div class="sum-section">
+        <div class="sum-section-label">💧 ${currentLang === 'fr' ? 'Eau de brumisation' : 'Misting water'}</div>
+        <div class="sum-water-status ok">${currentLang === 'fr' ? 'Utilisé' : 'Used'} : ${adaptive.water_used_L.toFixed(1)} L (${currentLang === 'fr' ? 'réservoir illimité' : 'unlimited reservoir'})</div>
+      </div>`;
+  }
+
+  // Timeline
+  let timelineHtml = '';
+  if (adaptive) {
+    const MODE_LABEL = {
+      ferme:       currentLang === 'fr' ? 'Fenêtres fermées' : 'Windows closed',
+      ouvert:      currentLang === 'fr' ? 'Ouvrir les fenêtres' : 'Open windows',
+      brumisation: currentLang === 'fr' ? 'Brumisation' : 'Misting',
+    };
+    const MODE_DOT = { ferme: '#86868b', ouvert: '#ff9f0a', brumisation: '#2997ff' };
+
+    const events = (adaptive.regime_events || [])
+      .slice()
+      .sort((a, b) => a.t_h - b.t_h);
+
+    const rows = events.map(e => `
+      <div class="sum-tl-row">
+        <span class="sum-tl-time">${formatSimTime(e.t_h)}</span>
+        <span class="sum-tl-dot" style="background:${MODE_DOT[e.mode] || '#86868b'}"></span>
+        <span class="sum-tl-label">${MODE_LABEL[e.mode] || e.mode}</span>
+      </div>`).join('');
+
+    if (rows) {
+      timelineHtml = `
+        <div class="sum-section">
+          <div class="sum-section-label">🗓 ${currentLang === 'fr' ? 'Planning du trajet' : 'Trip schedule'}</div>
+          <div class="sum-timeline">${rows}</div>
+        </div>`;
+    }
+  }
+
+  // Adaptive strategy note
+  let adaptNote = '';
+  if (adaptive) {
+    const notNeeded = data.adaptive_not_needed || (adaptive.misting_events || []).length === 0 && (adaptive.regime_events || []).every(e => e.mode === 'ferme');
+    adaptNote = notNeeded
+      ? `<div class="sum-val-note sum-note-ok">${currentLang === 'fr' ? 'Stratégie adaptative non nécessaire' : 'Adaptive strategy not needed'}</div>`
+      : `<div class="sum-val-note sum-note-warn">${currentLang === 'fr' ? 'Stratégie adaptative nécessaire' : 'Adaptive strategy required'}</div>`;
+  }
+
+  const card = document.getElementById('summaryCard');
+  card.innerHTML = `
+    <div class="sum-header">
+      <div class="sum-val-circle">
+        <svg width="72" height="72" viewBox="0 0 76 76" fill="none">
+          <circle cx="38" cy="38" r="34" stroke="${color}" stroke-width="2.5" opacity="0.25"/>
+          ${isGood ? checkPath : crossPath}
+        </svg>
+      </div>
+      <div class="sum-val-text">
+        <div class="sum-val-title" style="color:${color}">${t(`risk_${riskSrc}_title`)}</div>
+        <div class="sum-val-tmax">T<sub>max</sub> = ${tMax.toFixed(1)} °C</div>
+        ${adaptNote}
+      </div>
+    </div>
+    ${waterHtml}
+    ${timelineHtml}`;
+
+  card.style.display = 'block';
+  requestAnimationFrame(() => requestAnimationFrame(() => card.classList.add('sum-visible')));
+}
+
+let _detailsOpen = false;
+
+function toggleDetails() {
+  const section = document.getElementById('detailsSection');
+  const chevron = document.getElementById('dtChevron');
+  const label   = document.getElementById('dtLabel');
+  _detailsOpen  = !_detailsOpen;
+
+  if (_detailsOpen) {
+    section.style.display = 'block';
+    chevron.classList.add('dt-open');
+    if (label) label.textContent = currentLang === 'fr' ? 'Masquer les détails' : 'Hide details';
+    window.dispatchEvent(new Event('resize'));
+  } else {
+    section.style.display = 'none';
+    chevron.classList.remove('dt-open');
+    if (label) label.textContent = currentLang === 'fr' ? 'Graphiques et détails scientifiques' : 'Graphs and scientific details';
+  }
+}
+
 function renderResults(data) {
   lastSimData = data;
   const section = document.getElementById('results');
   section.style.display = 'block';
+
+  // Reset details panel to collapsed state on each new simulation
+  _detailsOpen = false;
+  document.getElementById('detailsSection').style.display = 'none';
+  const dtChev = document.getElementById('dtChevron');
+  if (dtChev) { dtChev.classList.remove('dt-open'); dtChev.textContent = '↓'; }
+  const dtLbl = document.getElementById('dtLabel');
+  if (dtLbl) dtLbl.textContent = currentLang === 'fr' ? 'Graphiques et détails scientifiques' : 'Graphs and scientific details';
+
+  // Show summary first
+  renderSummary(data);
+  document.getElementById('detailsToggleRow').style.display = '';
 
   // Risk banner — show adaptive result if available, else ferme
   const adaptive   = data.adaptive;
