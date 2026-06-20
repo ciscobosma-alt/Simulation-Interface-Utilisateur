@@ -825,6 +825,7 @@ function buildCurveToggles(traces) {
   const TRANSP_PARENT = {
     '_grad_ferme':         t('mode_ferme'),
     '_grad_adaptive':      t('adaptive_strategy'),
+    '_adaptive_seg':       t('adaptive_strategy'),
     '_grad_ferme_chaud':   `${t('closed_label')} — ${t('extreme_hot')}`,
     '_grad_ferme_froid':   `${t('closed_label')} — ${t('extreme_cold')}`,
     '_grad_adap_chaud':    `${t('adaptive_label')} — ${t('extreme_hot')}`,
@@ -870,7 +871,7 @@ function toggleCurve(name, visible) {
   // Sync gradient overlays to their parent curve
   const OVERLAY_CHILDREN = {
     [t('mode_ferme')]:                                  ['_grad_ferme'],
-    [t('adaptive_strategy')]:                           ['_grad_adaptive'],
+    [t('adaptive_strategy')]:                           ['_grad_adaptive', '_adaptive_seg'],
     [`${t('closed_label')} — ${t('extreme_hot')}`]:    ['_grad_ferme_chaud'],
     [`${t('closed_label')} — ${t('extreme_cold')}`]:   ['_grad_ferme_froid'],
     [`${t('adaptive_label')} — ${t('extreme_hot')}`]:  ['_grad_adap_chaud'],
@@ -937,9 +938,9 @@ function renderEventLog(adaptive) {
 }
 
 // ── Render results ────────────────────────────────────────────────────────────
-function makeTranspGradientTrace(tArr, TArr, transpScale, name) {
+function makeTranspGradientTrace(tArr, TArr, transpScale, name, midT = 39.5) {
   const colors = TArr.map(T => {
-    const f = (1 / (1 + Math.exp(-8 * (T - 39.5)))) * transpScale;
+    const f = (1 / (1 + Math.exp(-8 * (T - midT)))) * transpScale;
     if (f < 0.02) return 'rgba(0,0,0,0)';
     const norm = Math.min(1, (f - 0.02) / 0.98);
     const g = Math.round(159 * (1 - norm));
@@ -1005,50 +1006,58 @@ function renderSummary(data) {
       </div>`;
   }
 
-  // Timeline
+  // Timeline — card stack
   let timelineHtml = '';
   if (adaptive) {
+    const isFr = currentLang === 'fr';
     const MODE_LABEL = {
-      ferme:       currentLang === 'fr' ? 'Fenêtres fermées' : 'Windows closed',
-      ouvert:      currentLang === 'fr' ? 'Ouvrir les fenêtres' : 'Open windows',
-      brumisation: currentLang === 'fr' ? 'Brumisation' : 'Misting',
+      ferme:       isFr ? 'Fenêtres fermées'     : 'Windows closed',
+      ouvert:      isFr ? 'Fenêtres ouvertes'    : 'Open windows',
+      brumisation: isFr ? 'Brumisation active'   : 'Misting active',
     };
     const MODE_COLOR = { ferme: '#636366', ouvert: '#ff9f0a', brumisation: '#2997ff' };
+    const MODE_ICON  = {
+      ferme: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <rect x="3" y="7" width="18" height="13" rx="2"/><line x1="3" y1="11" x2="21" y2="11"/><line x1="12" y1="7" x2="12" y2="20"/>
+        <path d="M7 4h10"/></svg>`,
+      ouvert: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <path d="M3 8l4-4m0 0l4 4M7 4v9"/><path d="M21 16l-4 4m0 0l-4-4m4 4v-9"/>
+        <line x1="3" y1="20" x2="21" y2="20" stroke-opacity="0.3"/></svg>`,
+      brumisation: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <path d="M12 2v4M4.93 4.93l2.83 2.83M2 12h4M4.93 19.07l2.83-2.83"/>
+        <path d="M8 16s0 3 4 3 4-3 4-3-1-2-4-2-4 2-4 2z"/><path d="M17 10c1.5 0 3 1 3 3"/></svg>`,
+    };
 
-    const events = (adaptive.regime_events || [])
-      .slice()
-      .sort((a, b) => a.t_h - b.t_h);
-
-    const serT = adaptive.series && adaptive.series.t_h;
+    const events = (adaptive.regime_events || []).slice().sort((a, b) => a.t_h - b.t_h);
+    const serT     = adaptive.series?.t_h;
     const tripEndH = serT ? serT[serT.length - 1] : null;
 
-    const rows = events.map((e, i) => {
+    const cards = events.map((e, i) => {
       const nextH = i < events.length - 1 ? events[i + 1].t_h : tripEndH;
-      const durH  = (nextH !== null && nextH !== undefined) ? nextH - e.t_h : null;
+      const durH  = nextH != null ? nextH - e.t_h : null;
       let durStr = '';
-      if (durH !== null && durH > 0) {
-        const h = Math.floor(durH);
-        const m = Math.round((durH - h) * 60);
-        durStr = h > 0 ? `${h}h${m > 0 ? String(m).padStart(2, '0') : ''}` : `${m}min`;
+      if (durH != null && durH > 0) {
+        const h = Math.floor(durH), m = Math.round((durH - h) * 60);
+        durStr = h > 0 ? `${h}h${m > 0 ? String(m).padStart(2,'0') : ''}` : `${m} min`;
       }
-      const col = MODE_COLOR[e.mode] || '#636366';
-      const isLast = i === events.length - 1;
+      const col     = MODE_COLOR[e.mode] || '#636366';
+      const timeEnd = nextH != null ? ` → ${formatSimTime(nextH)}` : '';
       return `
-        <div class="sum-tl-row${isLast ? ' sum-tl-last' : ''}">
-          <span class="sum-tl-time">${formatSimTime(e.t_h)}</span>
-          <span class="sum-tl-dot" style="background:${col};box-shadow:0 0 0 3px #1a1a1e,0 0 8px ${col}80"></span>
-          <div class="sum-tl-right">
-            <span class="sum-tl-label" style="color:${col}">${MODE_LABEL[e.mode] || e.mode}</span>
-            ${durStr ? `<span class="sum-tl-dur">${durStr}</span>` : ''}
+        <div class="tl-card" style="--tl-col:${col}">
+          <div class="tl-card-icon">${MODE_ICON[e.mode] || ''}</div>
+          <div class="tl-card-body">
+            <span class="tl-card-mode">${MODE_LABEL[e.mode] || e.mode}</span>
+            <span class="tl-card-time">${formatSimTime(e.t_h)}${timeEnd}</span>
           </div>
+          ${durStr ? `<span class="tl-card-dur">${durStr}</span>` : ''}
         </div>`;
     }).join('');
 
-    if (rows) {
+    if (cards) {
       timelineHtml = `
         <div class="sum-section">
-          <div class="sum-section-label">🗓 ${currentLang === 'fr' ? 'Planning du trajet' : 'Trip schedule'}</div>
-          <div class="sum-timeline">${rows}</div>
+          <div class="sum-section-label">📋 ${isFr ? 'Planning du trajet' : 'Trip schedule'}</div>
+          <div class="sum-timeline">${cards}</div>
         </div>`;
     }
   }
@@ -1137,9 +1146,12 @@ function toggleDetails() {
   }
 }
 
+function showFinModal()  { document.getElementById('finModal').classList.add('open'); }
+function closeFinModal() { document.getElementById('finModal').classList.remove('open'); }
+
 function renderFinanceCard(data) {
-  const card = document.getElementById('finCard');
-  if (!card) return;
+  const body = document.getElementById('finModalBody');
+  if (!body) return;
 
   // ── Paramètres économiques (France 2024) ──
   // Surcoût aéro fenêtres ouvertes : ~3 €/h à 80 km/h, proportionnel à v (drag ∝ v²)
@@ -1198,7 +1210,7 @@ function renderFinanceCard(data) {
     ? `${fmtH(openHours)} à ${Math.round(avgSpeed)} km/h`
     : (isFr ? 'fenêtres fermées' : 'windows closed');
 
-  card.innerHTML = `
+  body.innerHTML = `
     <div class="fin-card">
       <div class="fin-glow"></div>
       <div class="fin-inner-bg"></div>
@@ -1213,10 +1225,10 @@ function renderFinanceCard(data) {
             </div>
             <span class="fin-title">${isFr ? 'Analyse financière' : 'Financial analysis'}</span>
           </div>
-          <span class="fin-badge">
-            <span class="fin-badge-dot"></span>
-            ${Math.round(distKm)} km
-          </span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="fin-badge"><span class="fin-badge-dot"></span>${Math.round(distKm)} km</span>
+            <button class="fin-close-btn" onclick="closeFinModal()" title="Fermer">✕</button>
+          </div>
         </div>
 
         <div class="fin-stats">
@@ -1244,7 +1256,16 @@ function renderFinanceCard(data) {
       </div>
     </div>`;
 
-  card.style.display = 'block';
+  // Show the trigger button row
+  const btnRow = document.getElementById('finBtnRow');
+  if (btnRow) {
+    btnRow.style.display = 'block';
+    btnRow.innerHTML = `
+      <button class="fin-open-btn" onclick="showFinModal()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        ${isFr ? 'Analyse financière' : 'Financial analysis'}
+      </button>`;
+  }
 }
 
 function renderResults(data) {
@@ -1361,15 +1382,42 @@ function renderResults(data) {
   }
 
   if (adaptive) {
+    const tArr = adaptive.series.t_h;
+    const TArr = adaptive.series.T_C;
+
+    // Main line — légende + hover (yellow, always visible)
     traces.push({
-      x: adaptive.series.t_h, y: adaptive.series.T_C,
+      x: tArr, y: TArr,
       type: 'scatter', mode: 'lines',
       name: t('adaptive_strategy'),
       line: { color: colorAdaptive, width: 2.5 },
       hovertemplate: '%{y:.2f} °C<extra>' + t('adaptive_label') + '</extra>',
     });
 
-    traces.push(makeTranspGradientTrace(adaptive.series.t_h, adaptive.series.T_C, 1.0, '_grad_adaptive'));
+    // Gradient segments on top — each chunk of 8 pts colored by avg temperature
+    const SEG = 8;
+    for (let s = 0; s < Math.ceil((tArr.length - 1) / SEG); s++) {
+      const i0     = s * SEG;
+      const i1     = Math.min(i0 + SEG + 1, tArr.length);
+      const TSlice = TArr.slice(i0, i1);
+      const Tavg   = TSlice.reduce((a, b) => a + b, 0) / TSlice.length;
+      const f      = 1 / (1 + Math.exp(-8 * (Tavg - 38.8)));
+      if (f < 0.27) continue; // stay yellow, skip this segment
+      const norm     = Math.min(1, (f - 0.27) / 0.73);
+      const g        = Math.round(214 * (1 - norm));
+      const b        = Math.round(10  * (1 - norm));
+      const segColor = `rgb(255,${g},${b})`;
+      traces.push({
+        x: tArr.slice(i0, i1), y: TSlice,
+        type: 'scatter', mode: 'lines',
+        name: '_adaptive_seg',
+        showlegend: false,
+        line: { color: segColor, width: 2.5 },
+        hoverinfo: 'skip',
+      });
+    }
+
+    traces.push(makeTranspGradientTrace(tArr, TArr, 1.0, '_grad_adaptive', 38.8));
   }
 
   // ── Cas extrêmes — enveloppe chaud/froid (tracés en pointillés, moins saturés) ──
@@ -1960,6 +2008,7 @@ function initBackground() {
   requestAnimationFrame(frame);
 }
 
+
 // ── Enter app (unlock scroll + scroll to app panel) ───────────────────────────
 function enterApp() {
   document.body.classList.remove('locked');
@@ -1970,14 +2019,132 @@ function enterApp() {
   });
 }
 
+// ── Hero globe (rotating Earth wireframe) ────────────────────────────────────
+function initHeroGlobe() {
+  const canvas = document.getElementById('heroGlobe');
+  if (!canvas || typeof d3 === 'undefined') return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const hero   = document.getElementById('heroScreen');
+  const W      = hero.offsetWidth;
+  const H      = hero.offsetHeight;
+  const dpr    = window.devicePixelRatio || 1;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.scale(dpr, dpr);
+
+  const radius = Math.min(W, H) * 0.44;
+  const proj   = d3.geoOrthographic()
+    .scale(radius)
+    .translate([W / 2, H / 2])
+    .clipAngle(90);
+  const geoPath = d3.geoPath().projection(proj).context(ctx);
+  const rot     = [0, -25, 0];
+  const allDots = [];
+  let   land    = null;
+
+  // ── Point-in-polygon helpers ──
+  function pip(pt, ring) {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi)
+        inside = !inside;
+    }
+    return inside;
+  }
+  function inFeature(pt, feat) {
+    const g = feat.geometry;
+    const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+    for (const poly of polys) {
+      if (!pip(pt, poly[0])) continue;
+      let hole = false;
+      for (let k = 1; k < poly.length; k++) { if (pip(pt, poly[k])) { hole = true; break; } }
+      if (!hole) return true;
+    }
+    return false;
+  }
+
+  // ── Generate sparse dots (spacing ~2.2° → ~3 000 dots total) ──
+  function makeDots(feat) {
+    const [[x0, y0], [x1, y1]] = d3.geoBounds(feat);
+    const step = 2.2;
+    const dots = [];
+    for (let lng = x0; lng <= x1; lng += step)
+      for (let lat = y0; lat <= y1; lat += step)
+        if (inFeature([lng, lat], feat)) dots.push([lng, lat]);
+    return dots;
+  }
+
+  // ── Render frame ──
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+    const sc = proj.scale();
+
+    // Globe sphere — contour only, no fill
+    ctx.beginPath();
+    ctx.arc(W / 2, H / 2, sc, 0, 2 * Math.PI);
+    ctx.strokeStyle = 'rgba(52,211,100,0.15)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    if (!land) return;
+
+    // Graticule
+    ctx.beginPath();
+    geoPath(d3.geoGraticule()());
+    ctx.strokeStyle = 'rgba(52,211,100,0.10)';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+
+    // Land outlines
+    ctx.beginPath();
+    land.features.forEach(f => geoPath(f));
+    ctx.strokeStyle = 'rgba(74,222,128,0.55)';
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+
+    // Dots on land
+    ctx.fillStyle = 'rgba(74,222,128,0.80)';
+    allDots.forEach(([lng, lat]) => {
+      const p = proj([lng, lat]);
+      if (!p) return;
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], 1.1, 0, 2 * Math.PI);
+      ctx.fill();
+    });
+  }
+
+  // ── Fetch GeoJSON + generate dots ──
+  fetch('https://raw.githubusercontent.com/martynafford/natural-earth-geojson/refs/heads/master/110m/physical/ne_110m_land.json')
+    .then(r => r.json())
+    .then(data => {
+      land = data;
+      data.features.forEach(f => makeDots(f).forEach(d => allDots.push(d)));
+      render();
+    })
+    .catch(() => {}); // silently fail — hero still visible
+
+  // ── Auto-rotate ──
+  d3.timer(() => {
+    rot[0] += 0.12;
+    proj.rotate(rot);
+    render();
+  });
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   applyTheme(currentTheme);
   initBackground();
+  initHeroGlobe();
   initMap();
   setupCitySearch('city_depart', 'sug_depart', onFromSelected);
   setupCitySearch('city_arrivee', 'sug_arrivee', onToSelected);
-  setLang('fr');
+  setLang('en');
   updateBreedNote();
   _renderHistBtn();
 });
