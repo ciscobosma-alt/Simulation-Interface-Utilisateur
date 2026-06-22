@@ -9,6 +9,13 @@
 </head>
 <body class="locked">
 
+<!-- Financial analysis modal -->
+<div id="finModal" class="fin-modal-overlay" onclick="if(event.target===this)closeFinModal()">
+  <div class="fin-modal-wrap">
+    <div id="finModalBody"></div>
+  </div>
+</div>
+
 <!-- Canvas background (fixed, z-index 0) -->
 <canvas id="bg"></canvas>
 
@@ -28,6 +35,8 @@
      SCREEN 1 — Hero (100 vh, scroll verrouillé)
 ══════════════════════════════════════════════════════ -->
 <section class="hero-screen" id="heroScreen">
+
+  <canvas id="heroGlobe" class="hero-globe-canvas" aria-hidden="true"></canvas>
 
   <p class="hero-eyebrow" data-i18n="hero_eyebrow">Bien-être animal en transport</p>
 
@@ -218,8 +227,8 @@
       <!-- Summary card — shown first after simulation -->
       <div id="summaryCard" style="display:none"></div>
 
-      <!-- Financial analysis card -->
-      <div id="finCard" style="display:none"></div>
+      <!-- Financial analysis trigger button -->
+      <div id="finBtnRow" style="display:none;text-align:center;margin:0 0 10px"></div>
 
       <!-- Toggle to expand full graphs & details -->
       <div id="detailsToggleRow" style="display:none;text-align:center;margin:4px 0 16px">
@@ -289,8 +298,7 @@
 ══════════════════════════════════════════════════════ -->
 <div class="wiz-overlay" id="wizOverlay">
 
-  <!-- Background wordmark -->
-  <div class="wiz-bg-mark" aria-hidden="true">SiteSphere</div>
+
 
   <!-- Top bar -->
   <div class="wiz-topbar">
@@ -446,6 +454,7 @@
 
 </div><!-- /wiz-overlay -->
 
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <script src="/static/app.js"></script>
