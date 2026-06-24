@@ -542,6 +542,7 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
                                "reason": f"{reason} — {opt_s/60:.1f}min calculé"})
 
     last_change_h = -REGIME_COOLDOWN_H  # permet un premier changement dès le départ
+    T_history = []  # T_cur à chaque pas — fenêtre glissante pour dT/dt
     t = 0.0
     while t <= duration_h + 1e-9:
         w          = nearest_w(t)
@@ -552,6 +553,11 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
         wind_amb   = w["wind_kmh"]
         is_highway      = truck_v > HIGH_SPEED and not is_stopped
         is_cold_highway = truck_v > 60.0       and not is_stopped  # seuil spécifique surcooldown
+
+        # Sliding-window dT/dt sur 45 min (3 pas de 15 min)
+        T_history.append(T_cur)
+        dTdt_45 = (T_history[-1] - T_history[-4]) / 0.75 if len(T_history) >= 4 else 0.0
+        rising_strong = dTdt_45 > 0.3 and T_cur > 38.9
 
         # Zone timers (at start of step)
         if T_cur >= T_RED_ZONE:
@@ -619,6 +625,43 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
                 _do_trigger_misting(
                     f"Vent faible ({vent_percu:.0f} km/h) — fenêtres insuffisantes (T={T_cur:.1f}°C)")
                 last_change_h = t
+
+            # 2c. Tendance haussière forte malgré fenêtres ouvertes → brumisation ciblée
+            # Bypasse _calc_opt_spray_s() : on cible T_CLOSE_WIN (38.5°C) directement.
+            # Le garde T_POST_MIN est ignoré : en tendance haussière installée, refroidir est l'objectif.
+            elif (mode == "ouvert" and rising_strong and can_mist and cooldown_ok):
+                vent_2c   = max(wind_amb, 5.0) if is_stopped else max(truck_v, 10.0)
+                h_2c      = h_convection_forcee_sphere_W_m2K(r, vent_2c, Tinf, RH)
+                mdot_2c   = mdot_evap_max_kg_s(r, vent_2c, Tinf, RH)
+                spray_P_2c = min(MIST_KG_S, mdot_2c) * H_FG
+                # Puissance nette extraite de l'animal sous spray (W)
+                net_cool_W = spray_P_2c + h_2c * S * (T_cur - Tinf) - Pint(T_cur)
+                if net_cool_W > 0.5:
+                    # Durée pour atteindre T_CLOSE_WIN à partir de T_cur
+                    spray_s_2c = max(DT_S, (T_cur - T_CLOSE_WIN) * C_JK / net_cool_W)
+                else:
+                    # Spray pas assez efficace : fallback sur l'optimiseur standard
+                    spray_s_2c = _calc_opt_spray_s()
+                spray_s_2c = min(spray_s_2c, time_left_h * 3600.0)
+                water_needed_2c = n_animals * MIST_KG_S * spray_s_2c
+                w_avail_2c = (available_water_L - water_used_L) if available_water_L is not None else float('inf')
+                if water_needed_2c > w_avail_2c:
+                    water_shortfall_L += water_needed_2c - w_avail_2c
+                    spray_s_2c = (w_avail_2c / (n_animals * MIST_KG_S)) if n_animals * MIST_KG_S > 0 else 0.0
+                    water_L_2c = w_avail_2c
+                else:
+                    water_L_2c = water_needed_2c
+                water_used_L  += water_L_2c
+                mode           = "brumisation"
+                misting_end_h  = t + spray_s_2c / 3600.0
+                t_discomfort   = 0.0
+                t_red          = 0.0
+                misting_events.append({"t_start_h": round(t, 4), "t_end_h": round(misting_end_h, 4),
+                                        "T_trigger": round(T_cur, 2), "water_L": round(water_L_2c, 3)})
+                regime_events.append({"t_h": round(t, 4), "mode": "brumisation",
+                                       "reason": (f"Tendance haussière ({dTdt_45:.2f}°C/h sur 45min) "
+                                                   f"— ciblé {T_CLOSE_WIN}°C ({spray_s_2c/60:.1f}min, T={T_cur:.1f}°C)")})
+                last_change_h  = t
 
             # 3. Fermé + stress → ouvrir fenêtres (sauf risque surcooldown)
             elif mode == "ferme" and t_discomfort >= MIST_PRE_MIN and cooldown_ok:
