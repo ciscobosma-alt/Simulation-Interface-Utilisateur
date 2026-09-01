@@ -7,10 +7,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, date
 import base64
 from flask import Flask, render_template, request, jsonify, Response
+from flask_cors import CORS
 from simulation import (run_simulation_core, h_convection_forcee_sphere_W_m2K,
                         mdot_evap_max_kg_s, H_FG, rk4_step, appliquer_cas_extreme)
 
 app = Flask(__name__)
+CORS(app)
 
 APP_PASSWORD = os.environ.get("APP_PASSWORD")
 
@@ -351,9 +353,9 @@ def simulate_adaptive(hourly_weather, duration_h, masse_kg, qv, rho,
     S     = 4.0 * np.pi * r ** 2
     C_JK  = masse_kg * 3500.0
     P0_W  = qv * V_m3
-    Pmin  = P0_W * 0.60
-    Pmax  = P0_W * 1.40
-    T_SIG_THERMOREG = 38.5   # °C — inflexion sigmoïde thermoreg
+    Pmin  = P0_W * 0.50
+    Pmax  = P0_W * 2.50
+    T_SIG_THERMOREG = 38.0   # °C — inflexion sigmoïde thermoreg
     K_SIG_THERMOREG = 3.0    # 1/°C — raideur
 
     def Pint(T_C):
@@ -812,9 +814,9 @@ def replay_adaptive_schedule(regime_events, misting_events,
     S     = 4.0 * np.pi * r ** 2
     C_JK  = masse_kg * 3500.0
     P0_W  = qv * V_m3
-    Pmin  = P0_W * 0.60
-    Pmax  = P0_W * 1.40
-    T_SIG_THERMOREG = 38.5   # °C — inflexion sigmoïde thermoreg
+    Pmin  = P0_W * 0.50
+    Pmax  = P0_W * 2.50
+    T_SIG_THERMOREG = 38.0   # °C — inflexion sigmoïde thermoreg
     K_SIG_THERMOREG = 3.0    # 1/°C — raideur
 
     def Pint(T_C):
@@ -938,16 +940,16 @@ def make_payload(masse_kg, qv, rho, duration_h, n_points, regimes):
         "debit_apparition_eau_kg_s": 0.0002,
         "thermoreg_enabled":         True,
         "thermoreg_model":           "sigmoide",
-        "T_sig_C":                   38.5,
+        "T_sig_C":                   38.0,
         "k_sig_per_C":               3.0,
-        "T_set_C":                   38.5,
+        "T_set_C":                   38.0,
         "Delta_C":                   0.2,
         "k_c_W_K":                   500,
         "k_h_W_K":                   500,
         "k_froid_emp_W_K":           50,
         "k_extrapole_emp_W_K":       500,
-        "pct_pmin":                  60,
-        "pct_pmax":                  140,
+        "pct_pmin":                  50,
+        "pct_pmax":                  250,
         "vent_ambiant_kmh":          0.1,
         "Rth_camion_K_W":            0.2,
         "V_camion_m3":               60,
