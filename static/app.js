@@ -733,8 +733,8 @@ async function runSimulation() {
       misting_duration_min: mistingDurationMin,
       available_water_L:   wizAdaptive && wizMisting ? wizReservoir : null,
       cas_extremes_enabled: document.getElementById('casExtremesEnabled')?.checked ?? false,
-      pct_chaud:           parseFloat(document.getElementById('pct_chaud')?.value) || 20,
-      pct_froid:           parseFloat(document.getElementById('pct_froid')?.value) || 20,
+      pct_chaud:           5,
+      pct_froid:           5,
       seed:                Math.floor(Math.random() * 9999),
     };
 
@@ -1332,9 +1332,9 @@ function renderResults(data) {
   document.getElementById('riskTmax').textContent  = `${tMaxShow.toFixed(1)} °C`;
 
   // Score probabiliste
-  const scoreBadge = document.getElementById('riskScoreBadge');
-  const scoreVal   = document.getElementById('riskScoreValue');
-  if (scoreBadge && scoreVal) {
+  const scorePill = document.getElementById('riskScorePill');
+  const scoreVal  = document.getElementById('riskScoreValue');
+  if (scorePill && scoreVal) {
     const score = adaptive && adaptive.score != null
       ? adaptive.score
       : data.score_ferme != null
@@ -1345,7 +1345,7 @@ function renderResults(data) {
             return riskScoreWithExtremes(tMaxShow, tCh, tFr);
           })();
     scoreVal.textContent = Number.isInteger(score) ? score : score.toFixed(1);
-    scoreBadge.style.display = '';
+    scorePill.style.display = '';
   }
 
   // Extreme cases summary line in banner
