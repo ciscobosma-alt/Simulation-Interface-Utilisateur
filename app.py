@@ -9,7 +9,8 @@ import base64
 from flask import Flask, render_template, request, jsonify, Response
 from flask_cors import CORS
 from simulation import (run_simulation_core, h_convection_forcee_sphere_W_m2K,
-                        mdot_evap_max_kg_s, H_FG, rk4_step, appliquer_cas_extreme)
+                        mdot_evap_max_kg_s, H_FG, rk4_step, appliquer_cas_extreme,
+                        correct_circadian, calibrate_T_sig)
 
 app = Flask(__name__)
 CORS(app)
@@ -970,6 +971,49 @@ def classify_risk(T_max):
     return "ok"
 
 
+_SIGMA_MODEL = 0.55  # RMSE calibré INRAE — 5 animaux Montbéliard 2025-2026
+
+
+def _norm_cdf(z):
+    """CDF normale standard via math.erfc (stdlib, pas de scipy)."""
+    import math
+    return 0.5 * math.erfc(-z / math.sqrt(2))
+
+
+def risk_score(T_sim, sigma=None):
+    """
+    Score de risque probabiliste 0.0–100.0.
+    Score = E[sévérité | T_sim] avec T_réel ~ N(T_sim, sigma²).
+    Poids de sévérité : ok=0, caution=25, warning=60, danger=100.
+    sigma fixé à _SIGMA_MODEL si non fourni.
+    """
+    if sigma is None:
+        sigma = _SIGMA_MODEL
+    T1, T2, T3 = 39.5, 40.0, 41.0
+    p_ok      = _norm_cdf((T1 - T_sim) / sigma)
+    p_caution = _norm_cdf((T2 - T_sim) / sigma) - p_ok
+    p_warning = _norm_cdf((T3 - T_sim) / sigma) - _norm_cdf((T2 - T_sim) / sigma)
+    p_danger  = 1.0 - _norm_cdf((T3 - T_sim) / sigma)
+    return round(25 * p_caution + 60 * p_warning + 100 * p_danger, 1)
+
+
+def risk_score_with_extremes(T_sim, T_chaud=None, T_froid=None):
+    """
+    Score combinant incertitude modèle + incertitude scénario.
+    σ_eff = sqrt(σ_modèle² + σ_scénario²)
+    Les extrêmes sont traités comme ±IC95 % → σ_scénario = (T_chaud − T_froid) / 3.92
+    """
+    import math
+    sigma = _SIGMA_MODEL
+    if T_chaud is not None and T_froid is not None:
+        sigma_scenario = (T_chaud - T_froid) / (2 * 1.96)
+        sigma = math.sqrt(_SIGMA_MODEL ** 2 + max(0, sigma_scenario) ** 2)
+    elif T_chaud is not None:
+        sigma_scenario = max(0.0, (T_chaud - T_sim) / 1.645)
+        sigma = math.sqrt(_SIGMA_MODEL ** 2 + sigma_scenario ** 2)
+    return risk_score(T_sim, sigma=sigma)
+
+
 # ── Flask routes ──────────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -1156,6 +1200,22 @@ def api_simulate():
             "source":          "open-meteo" if route_coords else "fallback",
         }
 
+        # ── Scores probabilistes (modèle + scénario) ──────────────────────────
+        _t_ch_ferm = max(ferme_chaud["T_C"]) if ferme_chaud else None
+        _t_fr_ferm = max(ferme_froid["T_C"]) if ferme_froid else None
+        score_ferme = risk_score_with_extremes(T_max_ferm, _t_ch_ferm, _t_fr_ferm)
+
+        score_ouvert = None
+        if T_max_ouv is not None:
+            score_ouvert = risk_score(T_max_ouv)
+
+        if res_adaptive:
+            _t_ch_adap = max(adap_chaud["T_C"]) if adap_chaud else None
+            _t_fr_adap = max(adap_froid["T_C"]) if adap_froid else None
+            res_adaptive["score"] = risk_score_with_extremes(
+                res_adaptive["T_max"], _t_ch_adap, _t_fr_adap
+            )
+
         return jsonify({
             "ok":               True,
             "ferme":            res_ferme["series"],
@@ -1172,6 +1232,8 @@ def api_simulate():
             "risk_ferme_froid":  risk_ferme_froid,
             "risk_adap_chaud":   risk_adap_chaud,
             "risk_adap_froid":   risk_adap_froid,
+            "score_ferme":       score_ferme,
+            "score_ouvert":      score_ouvert,
             "T_max_ferme":      round(T_max_ferm, 2),
             "T_max_ouvert":     round(T_max_ouv, 2) if T_max_ouv is not None else None,
             "strategy_needed":      risk_ferme != "ok",
@@ -1185,6 +1247,52 @@ def api_simulate():
     except Exception as e:
         import traceback
         return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 400
+
+
+@app.route("/api/calibrate", methods=["POST"])
+def api_calibrate():
+    """Calibre T_sig et retire le rythme circadien depuis les données mesurées.
+
+    Corps JSON attendu :
+        measured      : [{t_h: float, T_mes: float}, ...]   — série du bolus
+        n_hours_calib : float (défaut 48)                   — fenêtre de calibration
+
+    Retourne :
+        T_sig_opt            : température de consigne calibrée (°C)
+        std_C                : écart-type du signal corrigé sur la fenêtre (°C)
+        circadian_amplitude_C: amplitude du rythme 24h retiré (°C)
+        circadian_phase_rad  : phase du rythme (rad)
+        n_points             : nombre de points valides utilisés
+    """
+    from simulation import correct_circadian, calibrate_T_sig as _calibrate
+
+    try:
+        data = request.get_json(force=True) or {}
+        measured = data.get("measured", [])
+        n_hours = float(data.get("n_hours_calib", 48.0))
+
+        if not measured:
+            return jsonify({"error": "measured est requis"}), 400
+
+        t_h  = [float(m["t_h"])   for m in measured]
+        T_mes = [float(m["T_mes"]) for m in measured]
+
+        if len(t_h) < 6:
+            return jsonify({"error": "Moins de 6 points — données insuffisantes"}), 400
+
+        T_sig_opt, std, amplitude, phase = _calibrate(t_h, T_mes, n_hours_calib=n_hours)
+
+        return jsonify({
+            "T_sig_opt":             round(T_sig_opt, 3),
+            "std_C":                 round(std, 3),
+            "circadian_amplitude_C": round(amplitude, 3),
+            "circadian_phase_rad":   round(phase, 4),
+            "n_points":              len([v for v in T_mes if v >= 36.5]),
+        })
+
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 400
 
 
 if __name__ == "__main__":

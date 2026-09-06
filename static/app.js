@@ -803,6 +803,40 @@ function classifyRisk(tMax) {
   return 'ok';
 }
 
+// ── Probabilistic risk score 0–100 ───────────────────────────────────────────
+function _normCdf(z) {
+  // Abramowitz & Stegun (1964) — error < 7.5e-8
+  const a = [0.254829592, -0.284496736, 1.421413741, -1.453152027, 1.061405429];
+  const p = 0.3275911;
+  const sign = z < 0 ? -1 : 1;
+  const x = Math.abs(z) / Math.SQRT2;
+  const t = 1 / (1 + p * x);
+  const y = 1 - (((((a[4]*t + a[3])*t + a[2])*t + a[1])*t + a[0])*t) * Math.exp(-x * x);
+  return 0.5 * (1 + sign * y);
+}
+
+function riskScore(tSim, sigma = 0.55) {
+  // E[sévérité | T_sim], poids ok=0 caution=25 warning=60 danger=100
+  const [T1, T2, T3] = [39.5, 40.0, 41.0];
+  const pOk      = _normCdf((T1 - tSim) / sigma);
+  const pCaution = _normCdf((T2 - tSim) / sigma) - pOk;
+  const pWarning = _normCdf((T3 - tSim) / sigma) - _normCdf((T2 - tSim) / sigma);
+  const pDanger  = 1 - _normCdf((T3 - tSim) / sigma);
+  return Math.round((25 * pCaution + 60 * pWarning + 100 * pDanger) * 10) / 10;
+}
+
+function riskScoreWithExtremes(tSim, tChaud = null, tFroid = null) {
+  let sigma = 0.55;
+  if (tChaud !== null && tFroid !== null) {
+    const sSc = Math.max(0, (tChaud - tFroid) / (2 * 1.96));
+    sigma = Math.sqrt(0.55 * 0.55 + sSc * sSc);
+  } else if (tChaud !== null) {
+    const sSc = Math.max(0, (tChaud - tSim) / 1.645);
+    sigma = Math.sqrt(0.55 * 0.55 + sSc * sSc);
+  }
+  return riskScore(tSim, sigma);
+}
+
 // ── Curve visibility toggles ─────────────────────────────────────────────────
 let _allTraces   = [];   // full trace list, set after each simulation
 let _traceVis    = {};   // { traceName: bool }
@@ -1296,6 +1330,23 @@ function renderResults(data) {
   document.getElementById('riskTitle').textContent = t(`risk_${riskSource}_title`);
   document.getElementById('riskDesc').textContent  = t(`risk_${riskSource}_desc`);
   document.getElementById('riskTmax').textContent  = `${tMaxShow.toFixed(1)} °C`;
+
+  // Score probabiliste
+  const scoreBadge = document.getElementById('riskScoreBadge');
+  const scoreVal   = document.getElementById('riskScoreValue');
+  if (scoreBadge && scoreVal) {
+    const score = adaptive && adaptive.score != null
+      ? adaptive.score
+      : data.score_ferme != null
+        ? data.score_ferme
+        : (() => {
+            const tCh = data.ferme_chaud ? Math.max(...data.ferme_chaud.T_C) : null;
+            const tFr = data.ferme_froid ? Math.max(...data.ferme_froid.T_C) : null;
+            return riskScoreWithExtremes(tMaxShow, tCh, tFr);
+          })();
+    scoreVal.textContent = Number.isInteger(score) ? score : score.toFixed(1);
+    scoreBadge.style.display = '';
+  }
 
   // Extreme cases summary line in banner
   const extEl = document.getElementById('riskExtremes');

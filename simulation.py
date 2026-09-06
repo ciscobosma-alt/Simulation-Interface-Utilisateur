@@ -379,7 +379,7 @@ def run_simulation_core(payload: dict, label_cas: str = "Nominal") -> dict:
     # --- Mode sigmoïde (défaut) ---
     # Sigmoïde unique : Pint passe de Pmax (froid) à Pmin (chaud) via σ(-k*(T-T_sig))
     # À T_sig et bornes symétriques (Pmin+Pmax=2P0) : Pint(T_sig) = P0 exactement
-    T_sig_C     = float(payload.get("T_sig_C",     38.5))  # °C — inflexion (= T_set physiologique)
+    T_sig_C     = float(payload.get("T_sig_C",     38.0))  # °C — inflexion (= T_set physiologique)
     k_sig_per_C = float(payload.get("k_sig_per_C",  3.0))  # 1/°C — raideur (gain max = (Pmax-Pmin)*k/4)
 
     # --- Mode linéaire ---
@@ -397,9 +397,9 @@ def run_simulation_core(payload: dict, label_cas: str = "Nominal") -> dict:
     k_froid_emp_W_K    = float(payload.get("k_froid_emp_W_K",   50.0))   # W/°C branche froide
     k_extrapole_emp_W_K = float(payload.get("k_extrapole_emp_W_K", 500.0)) # W/°C au-delà de 39.2°C
 
-    # Convention A : Pmin/Pmax en % de P0 (ex: 60 -> 0.60*P0 ; 140 -> 1.40*P0)
-    pct_pmin = float(payload.get("pct_pmin", 60.0))
-    pct_pmax = float(payload.get("pct_pmax", 140.0))
+    # Convention A : Pmin/Pmax en % de P0 (ex: 50 -> 0.50*P0 ; 250 -> 2.50*P0)
+    pct_pmin = float(payload.get("pct_pmin", 50.0))
+    pct_pmax = float(payload.get("pct_pmax", 250.0))
 
     if Delta_C < 0:
         raise ValueError("Δ doit être ≥ 0.")
@@ -912,3 +912,69 @@ def run_all_cases(payload: dict) -> dict:
         "image_png_base64": nominal["image_png_base64"],
     }
     return out
+
+
+# ============================================================
+# CALIBRATION — correction circadienne + estimation T_sig
+# ============================================================
+
+def correct_circadian(T_arr: list, t_h_arr: list) -> tuple:
+    """Retire le rythme fermentatif ruminale 24h du signal mesuré.
+
+    Ajuste T(t) = a0 + a1·cos(ωt) + a2·sin(ωt) par moindres carrés,
+    puis soustrait la composante oscillatoire en conservant la moyenne a0.
+
+    Retourne : (T_corrigé, amplitude_°C, phase_rad, moyenne_°C)
+    """
+    T = np.array(T_arr, dtype=float)
+    t = np.array(t_h_arr, dtype=float)
+    if len(T) < 6:
+        return T_arr, 0.0, 0.0, float(np.mean(T))
+
+    omega = 2.0 * np.pi / 24.0
+    A_mat = np.column_stack([np.ones_like(t), np.cos(omega * t), np.sin(omega * t)])
+    coeffs, _, _, _ = np.linalg.lstsq(A_mat, T, rcond=None)
+    a0, a1, a2 = coeffs
+
+    amplitude = float(np.sqrt(a1**2 + a2**2))
+    phase = float(np.arctan2(a1, a2))
+
+    T_oscillation = a1 * np.cos(omega * t) + a2 * np.sin(omega * t)
+    T_corrected = T - T_oscillation  # conserve la moyenne a0
+
+    return T_corrected.tolist(), amplitude, phase, float(a0)
+
+
+def calibrate_T_sig(t_h_arr: list, T_mes_arr: list,
+                    n_hours_calib: float = 48.0) -> tuple:
+    """Estime le T_sig optimal pour un animal à partir de ses premières heures de mesure.
+
+    Principe : à l'équilibre thermique, T_sim → T_sig. La médiane du signal
+    corrigé (circadien retiré, artefacts filtrés) est donc le meilleur estimateur
+    de T_sig sans relancer la simulation.
+
+    Retourne : (T_sig_opt_°C, std_°C, amplitude_circadienne_°C, phase_rad)
+    """
+    t = np.array(t_h_arr, dtype=float)
+    T = np.array(T_mes_arr, dtype=float)
+
+    # Filtre artefacts abreuvement
+    valid = T >= 36.5
+    t, T = t[valid], T[valid]
+    if len(T) < 6:
+        return 38.0, 0.0, 0.0, 0.0
+
+    # Correction circadienne sur l'ensemble du signal pour estimer amplitude/phase
+    T_corr_all, amplitude, phase, mean_T = correct_circadian(T.tolist(), t.tolist())
+    T_corr_all = np.array(T_corr_all)
+
+    # Fenêtre de calibration
+    mask = t <= n_hours_calib
+    T_calib = T_corr_all[mask]
+    if len(T_calib) < 6:
+        T_calib = T_corr_all  # fallback : tout le signal
+
+    T_sig_opt = float(np.median(T_calib))
+    std = float(np.std(T_calib))
+
+    return T_sig_opt, std, amplitude, phase

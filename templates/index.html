@@ -249,7 +249,12 @@
             <p id="riskExtremes" style="display:none;font-size:0.75rem;color:#636366;margin-top:6px;line-height:1.6"></p>
             <p id="adaptiveNotNeeded" style="display:none;font-size:0.75rem;color:#30d158;margin-top:6px;font-weight:500"></p>
           </div>
-          <div class="risk-tmax" id="riskTmax"></div>
+          <div class="risk-tmax">
+            <div id="riskTmax"></div>
+            <div class="risk-score-badge" id="riskScoreBadge" style="display:none">
+              <span id="riskScoreValue"></span><span class="risk-score-denom">&thinsp;/&thinsp;100</span>
+            </div>
+          </div>
         </div>
 
         <div class="event-log-card" id="eventLogCard" style="display:none"></div>

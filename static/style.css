@@ -543,12 +543,25 @@ nav {
 
 .risk-content h2 { font-size: 1.1rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 4px; }
 .risk-content p  { color: var(--muted); font-size: 0.85rem; line-height: 1.55; }
-.risk-tmax { font-size: 1.7rem; font-weight: 700; margin-left: auto; flex-shrink: 0; }
+.risk-tmax { font-size: 1.7rem; font-weight: 700; margin-left: auto; flex-shrink: 0; text-align: right; }
 
 .risk-banner.ok      .risk-tmax { color: var(--success); }
 .risk-banner.caution .risk-tmax { color: var(--caution); }
 .risk-banner.warning .risk-tmax { color: var(--warning); }
 .risk-banner.danger  .risk-tmax { color: var(--danger); }
+
+.risk-score-badge {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-top: 3px;
+  letter-spacing: 0.01em;
+  opacity: 0.85;
+}
+.risk-score-denom { font-weight: 400; opacity: 0.6; font-size: 0.85em; }
+.risk-banner.ok      .risk-score-badge { color: var(--success); }
+.risk-banner.caution .risk-score-badge { color: var(--caution); }
+.risk-banner.warning .risk-score-badge { color: var(--warning); }
+.risk-banner.danger  .risk-score-badge { color: var(--danger); }
 
 /* Graph / weather cards */
 .graph-card {
