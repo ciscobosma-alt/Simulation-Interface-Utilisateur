@@ -224,6 +224,19 @@
     <!-- Results (hidden until simulation) -->
     <div id="results" style="display:none;padding:0 24px 24px">
 
+      <!-- Recalculate row -->
+      <div style="display:flex;justify-content:flex-end;margin:0 0 8px">
+        <button class="btn-recalc" onclick="runSimulation()" title="Relancer la simulation">
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+            <path d="M13 2v4H9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M1 7a6 6 0 0110.4-4L13 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <path d="M1 12v-4h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M13 7a6 6 0 01-10.4 4L1 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <span data-i18n="recalculate">Recalculer</span>
+        </button>
+      </div>
+
       <!-- Summary card — shown first after simulation -->
       <div id="summaryCard" style="display:none"></div>
 

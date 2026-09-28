@@ -23,6 +23,7 @@ const STRINGS = {
     add_stop:         "Ajouter une étape",
     stop_label:       "Étape",
     stop_duration:    "Durée d'arrêt",
+    recalculate:      "Recalculer",
     distance:         "Distance :",
     duree_route:      "Durée du voyage :",
     duree_arrets:     "dont arrêts :",
@@ -105,6 +106,7 @@ const STRINGS = {
     add_stop:         "Add a stop",
     stop_label:       "Stop",
     stop_duration:    "Stop duration",
+    recalculate:      "Recalculate",
     distance:         "Distance:",
     duree_route:      "Journey time:",
     duree_arrets:     "of which stops:",
@@ -1529,6 +1531,18 @@ function renderResults(data) {
     hovertemplate: '%{y:.1f} °C<extra>T ext.</extra>',
   });
 
+  // ── Courbe "arrêt au soleil" — T_animal si le camion est garé en plein soleil ──
+  if (data.ferme_sun_stops && (data.stops || []).length > 0) {
+    const sun = data.ferme_sun_stops;
+    traces.push({
+      x: sun.t_h, y: sun.T_C,
+      type: 'scatter', mode: 'lines',
+      name: currentLang === 'fr' ? 'Arrêt au soleil' : 'Stop in sun',
+      line: { color: '#ff8c00', width: 2, dash: 'dot' },
+      hovertemplate: '%{y:.2f} °C<extra>' + (currentLang === 'fr' ? 'Arrêt soleil' : 'Stop in sun') + '</extra>',
+    });
+  }
+
   // Regime bands from adaptive strategy
   const regimeBands = adaptive ? buildRegimeBands(adaptive.regime_events, routeDurationH) : [];
   const REGIME_FILL = { ouvert: 'rgba(255,159,10,0.09)', brumisation: 'rgba(41,151,255,0.14)' };
@@ -1813,6 +1827,9 @@ function renderResults(data) {
   };
 
   Plotly.react('plotly-weather', [traceT, traceH, traceV, traceS], wLayout, { responsive: true, displaylogo: false, displayModeBar: false, scrollZoom: false });
+
+  // ── Persist results across page refresh ──────────────────────────────────
+  try { localStorage.setItem('sitesphere_result', JSON.stringify(data)); } catch {}
 }
 
 // ── Stop thermal warnings ─────────────────────────────────────────────────────
@@ -2269,4 +2286,16 @@ document.addEventListener('DOMContentLoaded', () => {
   setLang('en');
   updateBreedNote();
   _renderHistBtn();
+
+  // Restore last simulation results after page refresh
+  try {
+    const saved = localStorage.getItem('sitesphere_result');
+    if (saved) {
+      const d = JSON.parse(saved);
+      if (d && d.ok) {
+        // Defer until Plotly + map are ready
+        setTimeout(() => renderResults(d), 200);
+      }
+    }
+  } catch {}
 });

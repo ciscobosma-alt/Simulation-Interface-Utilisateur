@@ -1868,3 +1868,21 @@ input[type="range"]::-moz-range-thumb {
 #map.map-dark .leaflet-tile-pane {
   filter: invert(1) hue-rotate(180deg) brightness(0.78) saturate(0.75);
 }
+
+/* ── Recalculate button ─────────────────────────────────────────────────────── */
+.btn-recalc {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px;
+  color: #8e8e93;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-recalc:hover { background: rgba(255,255,255,0.1); color: #e6edf3; }
+[data-theme="light"] .btn-recalc { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.1); color: #636366; }
+[data-theme="light"] .btn-recalc:hover { background: rgba(0,0,0,0.08); color: #1c1c1e; }

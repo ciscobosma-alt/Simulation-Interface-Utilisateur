@@ -1047,6 +1047,59 @@ def stop_thermal_warning(T_ext_C, RH_pct, stop_duration_h, G_solar):
     }
 
 
+def compute_sun_stop_weather(hourly_weather, route_stops, departure_dt):
+    """
+    Retourne une copie de hourly_weather où, pendant chaque arrêt au soleil,
+    temp_C est remplacé par T_compartiment(t) selon le modèle lumped.
+    T_comp(t) = T_ext + θ_inf*(1 - exp(-t/τ))
+    Les arrêts à G=0 (nuit) ne sont pas modifiés.
+    """
+    LX, LH, LW     = 7.0, 2.2, 2.4
+    V               = LX * LH * LW
+    rho_air, Cp_air = 1.20, 1005.0
+    A_parois        = 2*(LH*LX + LW*LX) + LW*LX
+    C_total         = rho_air*Cp_air*V + 7800*0.002*A_parois*500.0
+    alpha_s         = 0.65
+    h_ext_eff       = 12.0
+    U_eff           = 1.5
+    A_toit          = LX * LW
+    U_sigma         = h_ext_eff + U_eff
+    UA_vent         = (0.5 / 3600.0) * rho_air * Cp_air * V
+    Q_meta          = 5000.0
+
+    weather_sun = [dict(w) for w in hourly_weather]
+
+    for stop in route_stops:
+        t_arrive = stop.get("t_arrive_h", 0.0)
+        t_depart = stop.get("t_depart_h", t_arrive)
+
+        w0 = next((w for w in hourly_weather if abs(w["t_h"] - t_arrive) < 0.15), None)
+        if w0 is None and hourly_weather:
+            w0 = min(hourly_weather, key=lambda w: abs(w["t_h"] - t_arrive))
+        if not w0:
+            continue
+
+        T_ext   = w0["temp_C"]
+        stop_dt = departure_dt + timedelta(hours=t_arrive)
+        G       = solar_irradiance_estimate(stop_dt.hour + stop_dt.minute / 60.0, stop_dt.month)
+        if G < 1.0:
+            continue  # nuit ou arrêt à l'ombre → pas de modification
+
+        T_surf0   = (alpha_s*G + h_ext_eff*T_ext + U_eff*T_ext) / U_sigma
+        Q_sol0    = U_eff * A_toit * (T_surf0 - T_ext)
+        UA_eff    = U_eff * A_toit * h_ext_eff / U_sigma + UA_vent
+        tau       = C_total / UA_eff
+        theta_inf = (Q_meta + Q_sol0) / UA_eff
+
+        for ws in weather_sun:
+            if t_arrive <= ws["t_h"] < t_depart:
+                elapsed_s = (ws["t_h"] - t_arrive) * 3600.0
+                theta = theta_inf * (1.0 - math.exp(-elapsed_s / tau))
+                ws["temp_C"] = T_ext + min(theta, 40.0)  # cap physique
+
+    return weather_sun
+
+
 _SIGMA_MODEL = 0.55  # RMSE calibré INRAE — 5 animaux Montbéliard 2025-2026
 
 
@@ -1292,6 +1345,15 @@ def api_simulate():
                 res_adaptive["T_max"], _t_ch_adap, _t_fr_adap
             )
 
+        # ── Simulation complémentaire : arrêts au soleil ──────────────────────
+        res_sun_stop = None
+        if route_stops:
+            hw_sun      = compute_sun_stop_weather(hourly_weather, route_stops, departure_dt)
+            rng_sun     = np.random.RandomState(seed + 10)
+            reg_sun     = build_regimes_hourly(hw_sun, duration_h, "ferme", rng_sun)
+            payload_sun = make_payload(poids, qv, rho, duration_h, n_points, reg_sun)
+            res_sun_stop = run_simulation_core(payload_sun)
+
         # ── Avertissements thermiques aux arrêts ──────────────────────────────
         stop_warnings = []
         for stop in route_stops:
@@ -1336,6 +1398,7 @@ def api_simulate():
             "avg_speed_kmh":    round(avg_speed_kmh, 1),
             "stops":            route_stops,
             "stop_warnings":    stop_warnings,
+            "ferme_sun_stops":  res_sun_stop["series"] if res_sun_stop else None,
             "weather":          weather_series,
         })
 
