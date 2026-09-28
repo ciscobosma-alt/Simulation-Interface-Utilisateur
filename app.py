@@ -971,6 +971,82 @@ def classify_risk(T_max):
     return "ok"
 
 
+def solar_irradiance_estimate(hour_local, month=6):
+    """G solaire estimé (W/m²) depuis l'heure locale et le mois — modèle sinusoïdal."""
+    sunrise = 4.5 + (12 - month) * 0.3
+    sunset  = 21.5 - (12 - month) * 0.3
+    if hour_local <= sunrise or hour_local >= sunset:
+        return 0.0
+    if   month in (5, 6, 7, 8): G_max = 800.0
+    elif month in (4, 9):        G_max = 600.0
+    else:                        G_max = 400.0
+    G = G_max * math.sin(math.pi * (hour_local - sunrise) / (sunset - sunrise))
+    return max(0.0, G)
+
+
+def stop_thermal_warning(T_ext_C, RH_pct, stop_duration_h, G_solar):
+    """
+    Durée limite avant franchissement du THI critique (72) pour un arrêt.
+    Modèle : bilan thermique lumped air+parois, gain solaire toit, ventil. naturelle.
+
+    Retourne {risk, t_max_sun_min, t_max_shade_min, thi_initial, T_ext, RH_pct}
+      risk = "none" | "shade_mandatory" | "reduce_duration"
+    """
+    LX, LH, LW     = 7.0, 2.2, 2.4
+    V               = LX * LH * LW
+    rho_air, Cp_air = 1.20, 1005.0
+    A_parois        = 2*(LH*LX + LW*LX) + LW*LX
+    C_total         = rho_air*Cp_air*V + 7800*0.002*A_parois*500.0
+    alpha_s         = 0.65
+    h_ext_eff       = 12.0
+    U_eff           = 1.5
+    A_toit          = LX * LW
+    U_sigma         = h_ext_eff + U_eff
+    UA_vent         = (0.5 / 3600.0) * rho_air * Cp_air * V
+    Q_meta          = 5000.0
+
+    thi_init = 0.8*T_ext_C + (RH_pct/100.0)*(T_ext_C - 14.4) + 46.4
+    T_crit   = (25.6 + 14.4*RH_pct/100.0) / (0.8 + RH_pct/100.0)
+
+    def _t_max(G):
+        if T_ext_C >= T_crit:
+            return 0.0
+        theta_crit = T_crit - T_ext_C
+        T_surf0    = (alpha_s*G + h_ext_eff*T_ext_C + U_eff*T_ext_C) / U_sigma
+        Q_sol0     = U_eff * A_toit * (T_surf0 - T_ext_C)
+        UA_eff     = U_eff * A_toit * h_ext_eff / U_sigma + UA_vent
+        tau        = C_total / UA_eff
+        theta_inf  = (Q_meta + Q_sol0) / UA_eff
+        if theta_crit >= theta_inf:
+            return None  # seuil jamais atteint
+        return -tau * math.log(1.0 - theta_crit / theta_inf)
+
+    t_sun_s   = _t_max(G_solar)
+    t_shade_s = _t_max(0.0)
+    stop_s    = stop_duration_h * 3600.0
+
+    def _min(t_s):
+        if t_s is None:  return None
+        if t_s == 0.0:   return 0.0
+        return round(t_s / 60.0, 1)
+
+    if t_sun_s is None or t_sun_s >= stop_s:
+        risk = "none"
+    elif t_shade_s is None or t_shade_s >= stop_s:
+        risk = "shade_mandatory"
+    else:
+        risk = "reduce_duration"
+
+    return {
+        "risk":            risk,
+        "t_max_sun_min":   _min(t_sun_s),
+        "t_max_shade_min": _min(t_shade_s),
+        "thi_initial":     round(thi_init, 1),
+        "T_ext":           round(T_ext_C, 1),
+        "RH_pct":          round(RH_pct, 1),
+    }
+
+
 _SIGMA_MODEL = 0.55  # RMSE calibré INRAE — 5 animaux Montbéliard 2025-2026
 
 
@@ -1216,6 +1292,24 @@ def api_simulate():
                 res_adaptive["T_max"], _t_ch_adap, _t_fr_adap
             )
 
+        # ── Avertissements thermiques aux arrêts ──────────────────────────────
+        stop_warnings = []
+        for stop in route_stops:
+            t_stop_h = stop.get("t_arrive_h", 0.0)
+            w_stop = next((w for w in hourly_weather if abs(w["t_h"] - t_stop_h) < 0.15), None)
+            if w_stop is None and hourly_weather:
+                w_stop = min(hourly_weather, key=lambda w: abs(w["t_h"] - t_stop_h))
+            if w_stop:
+                stop_dt = departure_dt + timedelta(hours=t_stop_h)
+                G       = solar_irradiance_estimate(stop_dt.hour + stop_dt.minute / 60.0, stop_dt.month)
+                warning = stop_thermal_warning(
+                    w_stop["temp_C"], w_stop["rh_frac"] * 100.0,
+                    stop.get("duration_h", 1.0), G
+                )
+            else:
+                warning = {"risk": "none"}
+            stop_warnings.append(warning)
+
         return jsonify({
             "ok":               True,
             "ferme":            res_ferme["series"],
@@ -1241,6 +1335,7 @@ def api_simulate():
             "breed_name":       breed["fr"],
             "avg_speed_kmh":    round(avg_speed_kmh, 1),
             "stops":            route_stops,
+            "stop_warnings":    stop_warnings,
             "weather":          weather_series,
         })
 

@@ -1810,3 +1810,56 @@ input[type="range"]::-moz-range-thumb {
 [data-theme="light"] input[type="range"]::-webkit-slider-thumb { border-color: rgba(0,0,0,0.20); }
 [data-theme="light"] input[type="range"]::-moz-range-thumb     { border-color: rgba(0,0,0,0.20); }
 [data-theme="light"] #simLoading    { background: #f0f0f5; }
+
+/* ── Stop thermal warnings ─────────────────────────────────────────────────── */
+.sw-card {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.075);
+  border-radius: 14px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sw-header {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #636366;
+  margin-bottom: 2px;
+}
+
+.sw-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+
+.sw-orange { background: rgba(255,159,10,0.08); border: 1px solid rgba(255,159,10,0.22); }
+.sw-red    { background: rgba(255,69,58,0.08);  border: 1px solid rgba(255,69,58,0.22); }
+
+.sw-left  { display: flex; flex-direction: column; gap: 2px; min-width: 80px; }
+.sw-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+
+.sw-city { font-size: 0.85rem; font-weight: 600; color: #e6edf3; }
+.sw-dur  { font-size: 0.72rem; color: #636366; }
+.sw-sub  { font-size: 0.72rem; color: #636366; text-align: right; }
+
+.sw-badge {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+.sw-badge-orange { color: #ff9f0a; background: rgba(255,159,10,0.12); border: 1px solid rgba(255,159,10,0.3); }
+.sw-badge-red    { color: #ff453a; background: rgba(255,69,58,0.12);  border: 1px solid rgba(255,69,58,0.3); }
+
+[data-theme="light"] .sw-card    { background: rgba(0,0,0,0.02); border-color: rgba(0,0,0,0.08); }
+[data-theme="light"] .sw-city    { color: #1c1c1e; }
+[data-theme="light"] .sw-dur, [data-theme="light"] .sw-sub { color: #8e8e93; }

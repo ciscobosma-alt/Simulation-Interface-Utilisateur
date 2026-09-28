@@ -424,6 +424,7 @@ function addStop() {
 
   setupCitySearch(`city_stop_${id}`, `sug_stop_${id}`, coord => {
     stopsData[id].coord = coord;
+    stopsData[id].city  = coord.name || '';
     if (fromCoord && toCoord) calcRoute();
   });
 }
@@ -558,7 +559,8 @@ async function calcRoute() {
       cumulH += legDrivH;
       const durH = orderedStops[i].stopDurationH;
       routeStops.push({ t_arrive_h: cumulH, duration_h: durH, t_depart_h: cumulH + durH,
-                        lat: orderedStops[i].coord.lat, lon: orderedStops[i].coord.lon });
+                        lat: orderedStops[i].coord.lat, lon: orderedStops[i].coord.lon,
+                        city: orderedStops[i].city || '' });
       cumulH += durH;
     }
     const lastLeg   = route.legs[route.legs.length - 1];
@@ -1317,6 +1319,7 @@ function renderResults(data) {
 
   // Show summary first
   renderSummary(data);
+  renderStopWarnings(data);
   renderFinanceCard(data);
   document.getElementById('detailsToggleRow').style.display = '';
 
@@ -1808,6 +1811,73 @@ function renderResults(data) {
   };
 
   Plotly.react('plotly-weather', [traceT, traceH, traceV, traceS], wLayout, { responsive: true, displaylogo: false, displayModeBar: false, scrollZoom: false });
+}
+
+// ── Stop thermal warnings ─────────────────────────────────────────────────────
+function renderStopWarnings(data) {
+  const card = document.getElementById('stopWarningsCard');
+  if (!card) return;
+  const stops    = data.stops    || [];
+  const warnings = data.stop_warnings || [];
+  if (!stops.length || !warnings.length) { card.style.display = 'none'; return; }
+
+  const risky = warnings.some(w => w.risk && w.risk !== 'none');
+  if (!risky) { card.style.display = 'none'; return; }
+
+  const isFr = currentLang !== 'en';
+  const items = stops.map((stop, i) => {
+    const w = warnings[i] || { risk: 'none' };
+    if (w.risk === 'none') return '';
+
+    const city = stop.city || (isFr ? `Étape ${i+1}` : `Stop ${i+1}`);
+    const dur  = stop.duration_h != null ? (stop.duration_h * 60).toFixed(0) : '?';
+
+    if (w.risk === 'shade_mandatory') {
+      const label = isFr ? 'Ombrage obligatoire' : 'Shade required';
+      const sub   = w.t_max_sun_min != null
+        ? (isFr ? `Durée max au soleil : ${w.t_max_sun_min} min` : `Max sun exposure: ${w.t_max_sun_min} min`)
+        : '';
+      return `<div class="sw-item sw-orange">
+        <div class="sw-left">
+          <span class="sw-city">${city}</span>
+          <span class="sw-dur">${isFr ? 'Pause' : 'Stop'} ${dur} min</span>
+        </div>
+        <div class="sw-right">
+          <span class="sw-badge sw-badge-orange">&#9728; ${label}</span>
+          ${sub ? `<span class="sw-sub">${sub}</span>` : ''}
+        </div>
+      </div>`;
+    }
+
+    if (w.risk === 'reduce_duration') {
+      const shadeMin = w.t_max_shade_min != null ? w.t_max_shade_min : '?';
+      const sunMin   = w.t_max_sun_min   != null ? w.t_max_sun_min   : '?';
+      const label    = isFr ? `Réduire la pause à ${shadeMin} min` : `Reduce stop to ${shadeMin} min`;
+      const sub      = isFr
+        ? `Sans ombre : max ${sunMin} min — Météo ${w.T_ext}°C / HR ${w.RH_pct}%`
+        : `No shade: max ${sunMin} min — ${w.T_ext}°C / RH ${w.RH_pct}%`;
+      return `<div class="sw-item sw-red">
+        <div class="sw-left">
+          <span class="sw-city">${city}</span>
+          <span class="sw-dur">${isFr ? 'Pause' : 'Stop'} ${dur} min &rarr; risque</span>
+        </div>
+        <div class="sw-right">
+          <span class="sw-badge sw-badge-red">&#9888; ${label}</span>
+          <span class="sw-sub">${sub}</span>
+        </div>
+      </div>`;
+    }
+    return '';
+  }).filter(Boolean).join('');
+
+  if (!items) { card.style.display = 'none'; return; }
+
+  const title = isFr ? 'Avertissements — arrêts thermiques' : 'Thermal stop warnings';
+  card.innerHTML = `<div class="sw-card">
+    <div class="sw-header">${title}</div>
+    ${items}
+  </div>`;
+  card.style.display = '';
 }
 
 // ── Alert ─────────────────────────────────────────────────────────────────────
