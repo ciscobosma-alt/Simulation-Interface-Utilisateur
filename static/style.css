@@ -1863,3 +1863,8 @@ input[type="range"]::-moz-range-thumb {
 [data-theme="light"] .sw-card    { background: rgba(0,0,0,0.02); border-color: rgba(0,0,0,0.08); }
 [data-theme="light"] .sw-city    { color: #1c1c1e; }
 [data-theme="light"] .sw-dur, [data-theme="light"] .sw-sub { color: #8e8e93; }
+
+/* ── Map dark-mode tile filter (OSM tiles, no API key) ─────────────────────── */
+#map.map-dark .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.78) saturate(0.75);
+}

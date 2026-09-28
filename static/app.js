@@ -209,18 +209,20 @@ let map, mapTileLayer = null, routeLine = null;
 const mapMarkers  = [];
 const timeMarkers = [];
 
-const MAP_TILES = {
-  dark:  'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-  light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-};
+const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
 function setMapTiles(theme) {
   if (!map) return;
   if (mapTileLayer) { map.removeLayer(mapTileLayer); }
-  mapTileLayer = L.tileLayer(MAP_TILES[theme] || MAP_TILES.dark, {
-    attribution: '© OpenStreetMap © CARTO',
-    subdomains: 'abcd', maxZoom: 19
+  mapTileLayer = L.tileLayer(OSM_TILE_URL, {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    subdomains: 'abc', maxZoom: 19
   }).addTo(map);
+  const mapEl = document.getElementById('map');
+  if (mapEl) {
+    mapEl.classList.toggle('map-dark', theme === 'dark');
+    mapEl.classList.toggle('map-light', theme !== 'dark');
+  }
 }
 
 function initMap() {
