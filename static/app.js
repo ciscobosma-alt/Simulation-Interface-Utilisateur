@@ -1835,10 +1835,9 @@ function renderStopWarnings(data) {
     const dur  = stop.duration_h != null ? (stop.duration_h * 60).toFixed(0) : '?';
 
     if (w.risk === 'shade_mandatory') {
-      const label = isFr ? 'Ombrage obligatoire' : 'Shade required';
-      const sub   = w.t_max_sun_min != null
-        ? (isFr ? `Durée max au soleil : ${w.t_max_sun_min} min` : `Max sun exposure: ${w.t_max_sun_min} min`)
-        : '';
+      const sunMin = w.t_max_sun_min != null ? w.t_max_sun_min : '?';
+      const label  = isFr ? `Au soleil : max ${sunMin} min` : `In sun: max ${sunMin} min`;
+      const sub    = isFr ? 'À l\'ombre : aucun risque' : 'In shade: no risk';
       return `<div class="sw-item sw-orange">
         <div class="sw-left">
           <span class="sw-city">${city}</span>
@@ -1846,7 +1845,7 @@ function renderStopWarnings(data) {
         </div>
         <div class="sw-right">
           <span class="sw-badge sw-badge-orange">&#9728; ${label}</span>
-          ${sub ? `<span class="sw-sub">${sub}</span>` : ''}
+          <span class="sw-sub">${sub}</span>
         </div>
       </div>`;
     }
@@ -1854,10 +1853,10 @@ function renderStopWarnings(data) {
     if (w.risk === 'reduce_duration') {
       const shadeMin = w.t_max_shade_min != null ? w.t_max_shade_min : '?';
       const sunMin   = w.t_max_sun_min   != null ? w.t_max_sun_min   : '?';
-      const label    = isFr ? `Réduire la pause à ${shadeMin} min` : `Reduce stop to ${shadeMin} min`;
+      const label    = isFr ? `Réduire à ${shadeMin} min (même à l'ombre)` : `Reduce to ${shadeMin} min (even in shade)`;
       const sub      = isFr
-        ? `Sans ombre : max ${sunMin} min — Météo ${w.T_ext}°C / HR ${w.RH_pct}%`
-        : `No shade: max ${sunMin} min — ${w.T_ext}°C / RH ${w.RH_pct}%`;
+        ? `Au soleil : max ${sunMin} min — ${w.T_ext}°C / HR ${w.RH_pct}%`
+        : `In sun: max ${sunMin} min — ${w.T_ext}°C / RH ${w.RH_pct}%`;
       return `<div class="sw-item sw-red">
         <div class="sw-left">
           <span class="sw-city">${city}</span>
